@@ -15,7 +15,9 @@ import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -75,6 +77,8 @@ public final class UnitMapper {
                 }
             }
         }
+
+        pairSignatureChanges(builders);
 
         if (!typeLevelEdits.isEmpty()) {
             Mutable unitBuilder = new Mutable(SourceUnit.Kind.TYPE_LEVEL + "#" + TYPE_LEVEL_NAME);
@@ -323,8 +327,59 @@ public final class UnitMapper {
         return new SourceUnit(SourceUnit.Kind.TYPE_LEVEL, TYPE_LEVEL_NAME, startLine, endLine, text.toString());
     }
 
+    /**
+     * A changed parameter list changes the unit's key, so the same method arrives twice: once
+     * as a deletion and once as an insertion. Pairing the halves back together by identity
+     * matters because the alternative tells a reviewer that a method was removed and that its
+     * callers should be checked, while the method is in fact still there under a new signature.
+     */
+    private static void pairSignatureChanges(Map<String, Mutable> builders) {
+        List<Mutable> removed = new ArrayList<>();
+        List<Mutable> added = new ArrayList<>();
+        for (Mutable candidate : builders.values()) {
+            if (candidate.before != null && candidate.after == null) {
+                removed.add(candidate);
+            } else if (candidate.before == null && candidate.after != null) {
+                added.add(candidate);
+            }
+        }
+        Set<Mutable> consumed = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Mutable gone : removed) {
+            String identity = identityOf(gone.before);
+            Mutable closest = null;
+            int closestDistance = Integer.MAX_VALUE;
+            for (Mutable fresh : added) {
+                if (consumed.contains(fresh) || !identity.equals(identityOf(fresh.after))) {
+                    continue;
+                }
+                int distance = Math.abs(fresh.after.startLine() - gone.before.startLine());
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closest = fresh;
+                }
+            }
+            if (closest == null) {
+                continue;
+            }
+            consumed.add(closest);
+            builders.remove(closest.key);
+            builders.remove(gone.key);
+            gone.after = closest.after;
+            gone.edits.addAll(closest.edits);
+            gone.key = closest.key;
+            builders.put(gone.key, gone);
+        }
+    }
+
+    /** The unit's identity without its parameter list: the same method, whatever the signature. */
+    private static String identityOf(SourceUnit unit) {
+        String name = unit.name();
+        int parenthesis = name.indexOf('(');
+        return unit.kind() + "#" + (parenthesis >= 0 ? name.substring(0, parenthesis) : name);
+    }
+
     private static final class Mutable {
-        private final String key;
+        private String key;
         private SourceUnit before;
         private SourceUnit after;
         private final List<FileChange.EditRange> edits = new ArrayList<>();

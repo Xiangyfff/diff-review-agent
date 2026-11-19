@@ -135,4 +135,34 @@ class UnitMapperTest {
         assertThat(units).extracting(AnalysisUnit::kind)
                 .contains(SourceUnit.Kind.METHOD, SourceUnit.Kind.FIELD);
     }
+
+    @Test
+    void aChangedParameterListStaysOneUnit() {
+        String before = """
+                class Sample {
+                    void target(int a) {
+                        use(a);
+                    }
+                }
+                """;
+        String after = """
+                class Sample {
+                    void target(int a, int b) {
+                        use(a, b);
+                    }
+                }
+                """;
+
+        List<AnalysisUnit> units = mapper.map(
+                modified(before, after, new FileChange.EditRange(2, 3, 2, 3)),
+                TestSource.file(before), TestSource.file(after));
+
+        assertThat(units).hasSize(1);
+        AnalysisUnit unit = units.get(0);
+        assertThat(unit.isAdded()).isFalse();
+        assertThat(unit.isDeleted()).isFalse();
+        assertThat(unit.name()).isEqualTo("Sample.target(int, int)");
+        assertThat(unit.textBefore()).contains("target(int a)");
+        assertThat(unit.textAfter()).contains("target(int a, int b)");
+    }
 }

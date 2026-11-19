@@ -25,7 +25,7 @@ public final class MockTriageModel implements TriageModel {
     public UnitAssessment assess(UnitPrompt prompt) {
         List<FindingQuestion> questions = new ArrayList<>();
         for (StructuralChange change : prompt.changes()) {
-            String question = questionFor(change, prompt.unitKey());
+            String question = questionFor(change, prompt);
             if (question == null) {
                 continue;
             }
@@ -59,7 +59,7 @@ public final class MockTriageModel implements TriageModel {
         return new IntentSummary(intent, concerns);
     }
 
-    private static String questionFor(StructuralChange change, String unitKey) {
+    private static String questionFor(StructuralChange change, UnitPrompt prompt) {
         return switch (change.kind()) {
             case NULL_CHECK_REMOVED -> "这个值在当前位置是否仍可能为空？";
             case SIGNATURE_CHANGED -> "所有调用方是否已经按新签名更新？";
@@ -69,7 +69,9 @@ public final class MockTriageModel implements TriageModel {
             case RESOURCE_UNCLOSED -> "这个资源在后续代码里是否一定被关闭？";
             case CONDITION_INVERTED -> "条件翻转后在哪些输入上行为与改动前不同？";
             case MODIFIER_CHANGED -> "修饰符变化之后，并发可见性或初始化顺序是否仍然成立？";
-            case UNIT_ADDED -> "新增的入口是否已有调用方和对应的测试？";
+            case UNIT_ADDED -> prompt.file().contains("src/test/")
+                    ? "这个新增的测试覆盖了哪条行为变更？"
+                    : "新增的入口是否已有调用方和对应的测试？";
             case UNIT_REMOVED -> "删除之后是否还有代码引用它？";
             case ANNOTATION_REMOVED -> "被移除的注解原本提供的横切行为现在由谁承担？";
             case ANNOTATION_ADDED -> "新增的注解是否会改变这个方法的契约或运行期行为？";
