@@ -7,6 +7,14 @@ Review bots usually fail in three ways: they comment before reading the surround
 leave the diff to look at the caller, and nobody can say afterwards whether their comments were
 right. This project is built around those three failures.
 
+## 中文简介
+
+代码审查智能体常见的三个毛病是：没看上下文就评论、只看改动不看调用方、评论完没人能判断对不对。这个项目围绕这三件事设计。
+
+输入一次提交的差异，先做初审：把改动切成以函数为单位的分析单元，比较前后两版语法树，找出形状确实发生变化的地方——比如原本有一句判空、改完之后没有了，这和「代码里现在没有判空」是两件完全不同的事，现成的静态工具分不出来。再用一小组规则决定哪些单元必须查、哪些可以跳过。值得查的单元会拿到几个具体的待验证问题，留给下一段深挖逐个回答。初审只输出一份可以序列化的调查计划，不产生任何评论。
+
+当前进度：初审已完成，三十六个测试覆盖，全程离线可跑；深挖（工具调用与预算）、复核（专门反驳的评审员）、评估（用变异体做标准答案）还没开始。技术栈是 Java 21、JGit、JavaParser，模型层目前是一个薄接口，后面接 LangChain4j。
+
 ## How it works
 
 ```
