@@ -19,7 +19,16 @@ public record InvestigationState(
         List<Question> open,
         List<Evidence> evidence,
         int toolCallsUsed,
-        int toolCallsLeft) {
+        int toolCallsLeft,
+        /** Why the previous conclusion was rejected, or an empty string. */
+        String lastRejection) {
+
+    public InvestigationState {
+        changes = List.copyOf(changes);
+        open = List.copyOf(open);
+        evidence = List.copyOf(evidence);
+        lastRejection = lastRejection == null ? "" : lastRejection;
+    }
 
     public List<String> evidenceIds() {
         return evidence.stream().map(Evidence::id).toList();

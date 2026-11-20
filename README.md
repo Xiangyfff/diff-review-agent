@@ -81,22 +81,38 @@ strong counter-evidence retracts.
 
 `mvn -q compile` then `java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner`
 replays 16 mutations through the whole pipeline and writes `eval/latest-report.md` and
-`eval/latest-report.json`. Current numbers, with the offline stand-ins:
+`eval/latest-report.json`. Add `--real` to use the configured model instead of the stand-ins.
+
+Real model (`deepseek-chat`, temperature 0), latest run:
+
+| metric | value |
+|---|---|
+| triage unit recall | 64% (7/11) |
+| triage false positive rate | 0% (0/5) |
+| rule-gated recall (MUST, no model involved) | 64% (7/11) |
+| rule-gated false positives (MUST on clean changes) | 0% (0/5) |
+| end-to-end recall | 27% (3/11) |
+| findings | 4 |
+| kept / downgraded / dropped | 4 / 0 / 0 |
+
+Offline stand-ins, same corpus:
 
 | metric | value |
 |---|---|
 | triage unit recall | 100% (11/11) |
 | triage false positive rate | 60% (3/5) |
-| rule-gated recall (MUST, no model involved) | 64% (7/11) |
-| rule-gated false positives (MUST on clean changes) | 0% (0/5) |
 | end-to-end recall | 73% (8/11) |
 | kept / downgraded / dropped | 13 / 0 / 1 |
-| duplicate comments merged | 5 |
 
 Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
 every structural change, and the verifier stand-in retracts as soon as it reads a null check anywhere
 nearby — which is how one real defect (`resource-unclosed`) was dropped. Those rows measure wiring, not
-model quality. The rule-gated rows are the part no model can influence.
+model quality. The rule-gated rows are the part no model can influence, and they are identical in both
+runs.
+
+The real model is the opposite trade: it declines 4 of 7 judge-tier units (so recall falls to 64%) and
+it keeps the false-positive rate at zero. Its remaining losses are in investigation, where a unit
+usually yields one conclusion before the loop decides it has seen enough.
 
 The cheap gate is what moved the false-positive rate from 100% to 60% without touching recall: a unit
 whose changed parts are all shapeless leftovers and whose diff is four lines or fewer is skipped
