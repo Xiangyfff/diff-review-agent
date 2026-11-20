@@ -88,6 +88,12 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
             text.append('\n');
         }
 
+        if (!state.lastRejection().isEmpty()) {
+            text.append("你上一次给出的结论没有通过证据校验，原因是：")
+                    .append(state.lastRejection())
+                    .append("\n请先补上缺失的证据再下结论，不要原样重复上一次的说法。\n\n");
+        }
+
         text.append("仍然待回答的问题：\n");
         for (Question question : state.open()) {
             text.append("- ").append(question.id()).append("：").append(question.text()).append('\n');

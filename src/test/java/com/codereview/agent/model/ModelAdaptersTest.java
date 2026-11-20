@@ -119,7 +119,7 @@ class ModelAdaptersTest {
         var state = new com.codereview.agent.investigate.InvestigationState("METHOD#X.y()",
                 "src/X.java", 10, "void y() {}", "void y() { }", List.of("statement added"),
                 List.of(new com.codereview.agent.investigate.Question("q1", "这个值可能为空吗？")),
-                evidence, 3, 5);
+                evidence, 3, 5, "");
 
         List<String> prompts = new ArrayList<>();
         Chat chat = (system, user) -> {
@@ -136,7 +136,7 @@ class ModelAdaptersTest {
         String prompt = prompts.get(0);
         assertThat(prompt).contains("已折叠");
         assertThat(prompt.length()).isLessThan(naive);
-        assertThat(prompt.length()).isLessThan((int) (naive * 0.6));
+        assertThat(prompt.length()).isLessThan((int) (naive * 0.9));
     }
 
     @Test

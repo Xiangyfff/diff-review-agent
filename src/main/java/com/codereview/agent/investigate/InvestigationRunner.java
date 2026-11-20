@@ -3,7 +3,9 @@ package com.codereview.agent.investigate;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -41,6 +43,9 @@ public final class InvestigationRunner {
         int turns = 0;
         int rejected = 0;
         int fruitless = 0;
+        String lastCall = null;
+        String lastRejection = "";
+        Map<String, Integer> rejections = new HashMap<>();
         InvestigationResult.Outcome outcome = InvestigationResult.Outcome.CONCLUDED;
 
         while (!open.isEmpty()) {
@@ -55,7 +60,7 @@ public final class InvestigationRunner {
             turns++;
             InvestigationState state = new InvestigationState(task.unitKey(), task.file(), task.line(),
                     task.before(), task.after(), task.changes(), List.copyOf(open), store.all(),
-                    toolCalls, config.maxToolCalls() - toolCalls);
+                    toolCalls, config.maxToolCalls() - toolCalls, lastRejection);
 
             ModelTurn turn;
             try {
@@ -75,7 +80,13 @@ public final class InvestigationRunner {
                     break;
                 }
                 toolCalls++;
-                boolean produced = runTool(call.call(), store);
+                String signature = signatureOf(call.call());
+                // Reading the same place twice tells the model nothing it did not already have, so it
+                // counts as no progress. Without this, a model that lost track of what it had read
+                // spent the whole budget re-reading one file.
+                boolean repeated = signature.equals(lastCall);
+                lastCall = signature;
+                boolean produced = runTool(call.call(), store) && !repeated;
                 fruitless = produced ? 0 : fruitless + 1;
                 if (fruitless >= FRUITLESS_CALLS_BEFORE_STALL) {
                     outcome = InvestigationResult.Outcome.STALLED;
@@ -91,18 +102,32 @@ public final class InvestigationRunner {
                     fruitless = 0;
                 }
             } else if (turn instanceof ModelTurn.Conclude conclude) {
-                Optional<Question> question = remove(open, conclude.questionId());
+                Optional<Question> question = find(open, conclude.questionId());
                 if (question.isEmpty()) {
                     rejected++;
                     continue;
                 }
                 Finding finding = new Finding(task.unitKey(), task.file(), conclude.line(),
                         conclude.statement(), conclude.evidenceIds());
-                FindingVerifier.Validation validation = verifier.verify(finding, store);
+                FindingVerifier.Validation validation = verifier.verify(finding, store,
+                        task.line(), unitEndLine(task));
                 if (validation.ok()) {
+                    remove(open, conclude.questionId());
                     findings.add(finding);
+                    lastRejection = "";
                 } else {
+                    // A rejected conclusion must not consume the question: the rejection is the
+                    // reason to go and read more, not a way to close the question. The reason is
+                    // handed back so the next turn can fix what the check complained about.
                     rejected++;
+                    lastRejection = validation.reason();
+                    int attempts = rejections.merge(question.get().id(), 1, Integer::sum);
+                    if (attempts >= MAX_REJECTIONS_PER_QUESTION) {
+                        remove(open, conclude.questionId());
+                        abandoned.add(new InvestigationResult.Abandoned(question.get().id(),
+                                question.get().text(),
+                                "结论反复没有通过证据校验：" + validation.reason()));
+                    }
                 }
                 fruitless = 0;
             }
@@ -119,6 +144,8 @@ public final class InvestigationRunner {
     /**
      * @return whether the call produced at least one excerpt, which is what "progress" means here
      */
+    private static final int MAX_REJECTIONS_PER_QUESTION = 2;
+
     private boolean runTool(ToolCall call, EvidenceStore store) {
         Optional<ReviewTool> tool = toolbox.find(call.tool());
         if (tool.isEmpty()) {
@@ -129,6 +156,28 @@ public final class InvestigationRunner {
             store.add(call.tool(), excerpt.file(), excerpt.startLine(), excerpt.endLine(), excerpt.text());
         }
         return !result.excerpts().isEmpty();
+    }
+
+    private static String signatureOf(ToolCall call) {
+        StringBuilder text = new StringBuilder(call.tool()).append('(');
+        call.arguments().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> text.append(entry.getKey()).append('=')
+                        .append(entry.getValue()).append(';'));
+        return text.append(')').toString();
+    }
+
+    private static int unitEndLine(InvestigationTask task) {
+        String text = task.after() == null ? "" : task.after();
+        long lines = text.isEmpty() ? 0 : text.lines().count();
+        return (int) (task.line() + Math.max(0, lines - 1));
+    }
+
+    private static Optional<Question> find(Deque<Question> open, String id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return open.stream().filter(question -> question.id().equals(id)).findFirst();
     }
 
     private static Optional<Question> remove(Deque<Question> open, String id) {

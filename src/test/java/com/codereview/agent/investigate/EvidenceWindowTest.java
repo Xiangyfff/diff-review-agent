@@ -41,8 +41,8 @@ class EvidenceWindowTest {
 
         assertThat(rendered).contains("ev-1");
         assertThat(rendered).contains("已折叠");
-        assertThat(rendered).doesNotContain("second line 1");
-        assertThat(rendered.lines().count()).isEqualTo(10);
+        assertThat(rendered).doesNotContain("second line 2");
+        assertThat(rendered.split("- ev-", -1)).hasSize(11);
     }
 
     @Test
