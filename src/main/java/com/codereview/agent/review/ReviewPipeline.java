@@ -10,6 +10,7 @@ import com.codereview.agent.investigate.InvestigationTask;
 import com.codereview.agent.investigate.MockInvestigationModel;
 import com.codereview.agent.investigate.RepoAccess;
 import com.codereview.agent.investigate.Toolbox;
+import com.codereview.agent.triage.TriageConfig;
 import com.codereview.agent.triage.TriageService;
 import com.codereview.agent.triage.index.IndexBuilder;
 import com.codereview.agent.triage.index.SymbolIndex;
@@ -44,6 +45,8 @@ public final class ReviewPipeline {
     private final Verifier verifier;
     private final InvestigateConfig investigateConfig;
     private final VerifyConfig verifyConfig;
+    private final ModelFactory models;
+    private final String modelDescription;
 
     public ReviewPipeline(TriageService triage, InvestigationModel investigationModel,
             Verifier verifier, InvestigateConfig investigateConfig, VerifyConfig verifyConfig) {
@@ -52,6 +55,23 @@ public final class ReviewPipeline {
         this.verifier = verifier;
         this.investigateConfig = investigateConfig;
         this.verifyConfig = verifyConfig;
+        this.models = null;
+        this.modelDescription = "deterministic offline stand-ins";
+    }
+
+    /**
+     * A pipeline whose stages all speak to whatever the factory builds. The investigation model is
+     * requested inside {@link #run} because it needs the toolbox, and the toolbox needs the repository.
+     */
+    public ReviewPipeline(ModelFactory models, InvestigateConfig investigateConfig,
+            VerifyConfig verifyConfig) {
+        this.triage = new TriageService(models.triage(), TriageConfig.defaults());
+        this.investigationModel = null;
+        this.verifier = models.verifier();
+        this.investigateConfig = investigateConfig;
+        this.verifyConfig = verifyConfig;
+        this.models = models;
+        this.modelDescription = models.describe();
     }
 
     /**
@@ -60,6 +80,11 @@ public final class ReviewPipeline {
     public static ReviewPipeline offline() {
         return new ReviewPipeline(TriageService.offline(), new MockInvestigationModel(),
                 new MockVerifier(), InvestigateConfig.defaults(), VerifyConfig.defaults());
+    }
+
+    /** Which models this pipeline talks to, for the report header. */
+    public String modelDescription() {
+        return modelDescription;
     }
 
     public ReviewReport run(Path repository, String baseRevision, String headRevision)
@@ -71,7 +96,9 @@ public final class ReviewPipeline {
         // make either stage harder to run alone. Building it costs a filesystem walk.
         SymbolIndex index = new IndexBuilder(new SourceParser()).build(repository).index();
         Toolbox toolbox = Toolbox.standard(new RepoAccess(repository, index));
-        InvestigationRunner investigator = new InvestigationRunner(investigationModel, toolbox,
+        InvestigationModel investigatorModel = models == null ? investigationModel
+                : models.investigation(toolbox);
+        InvestigationRunner investigator = new InvestigationRunner(investigatorModel, toolbox,
                 investigateConfig);
         VerifierRunner verifierRunner = new VerifierRunner(verifier, toolbox, verifyConfig);
 
@@ -122,12 +149,18 @@ public final class ReviewPipeline {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
-            System.err.println("usage: ReviewPipeline <repository> <base> <head> [output-directory]");
+            System.err.println("usage: ReviewPipeline <repository> <base> <head> [output-directory]"
+                    + " [--real]");
             System.exit(2);
         }
         Path repository = Path.of(args[0]);
-        Path output = Path.of(args.length > 3 ? args[3] : "review");
-        ReviewReport report = ReviewPipeline.offline().run(repository, args[1], args[2]);
+        boolean real = java.util.Arrays.asList(args).contains("--real");
+        Path output = Path.of(args.length > 3 && !args[3].startsWith("--") ? args[3] : "review");
+        ReviewPipeline pipeline = real
+                ? new ReviewPipeline(com.codereview.agent.model.ReviewModels.fromEnvironment(),
+                        InvestigateConfig.defaults(), VerifyConfig.defaults())
+                : ReviewPipeline.offline();
+        ReviewReport report = pipeline.run(repository, args[1], args[2]);
         Files.createDirectories(output);
         Files.writeString(output.resolve("review.md"), report.renderMarkdown(),
                 StandardCharsets.UTF_8);
