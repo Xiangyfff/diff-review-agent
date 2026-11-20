@@ -1,6 +1,7 @@
 package com.codereview.agent.triage.plan;
 
 import com.codereview.agent.triage.model.IntentSummary;
+import com.codereview.agent.triage.tier.TierPolicy;
 
 import java.util.List;
 
@@ -24,6 +25,17 @@ public record TriagePlan(
 
     public List<PlannedUnit> scheduled() {
         return units.stream().filter(PlannedUnit::scheduled).toList();
+    }
+
+    /**
+     * How many units the cheap gate waved through without a model call. Derived from the recorded
+     * reason instead of counted separately so the number cannot drift away from the units it
+     * describes.
+     */
+    public long cheapGateSkipped() {
+        return units.stream()
+                .filter(unit -> TierPolicy.isCheapGate(unit.tierReason()))
+                .count();
     }
 
     public String render() {
