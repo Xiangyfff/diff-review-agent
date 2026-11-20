@@ -80,6 +80,10 @@ public final class EvalReport {
         return cases.stream().mapToLong(CaseOutcome::dropped).sum();
     }
 
+    public long merged() {
+        return cases.stream().mapToLong(CaseOutcome::merged).sum();
+    }
+
     public long invalidRetractions() {
         return cases.stream().mapToLong(CaseOutcome::invalidRetractions).sum();
     }
@@ -103,7 +107,8 @@ public final class EvalReport {
                 + " | clean=" + clean() + " flagged=" + cleanScheduled()
                 + " triageFPR=" + percent(triageFalsePositiveRate())
                 + " | findings=" + findings() + " kept=" + kept() + " downgraded=" + downgraded()
-                + " dropped=" + dropped() + " invalidRetractions=" + invalidRetractions()
+                + " dropped=" + dropped() + " merged=" + merged()
+                + " invalidRetractions=" + invalidRetractions()
                 + " | endToEndRecall=" + percent(endToEndRecall());
     }
 
@@ -129,6 +134,7 @@ public final class EvalReport {
         text.append("| findings | ").append(findings()).append(" |\n");
         text.append("| kept / downgraded / dropped | ").append(kept()).append(" / ")
                 .append(downgraded()).append(" / ").append(dropped()).append(" |\n");
+        text.append("| duplicates merged | ").append(merged()).append(" |\n");
         text.append("| invalid retractions | ").append(invalidRetractions()).append(" |\n\n");
         text.append("> The offline stand-ins never decline. The triage stand-in raises a question "
                 + "for every structural change, so every clean case gets scheduled; the verifier "
@@ -136,8 +142,8 @@ public final class EvalReport {
                 + "defect was dropped below. These rows measure the wiring, not model quality. The "
                 + "rule-gated rows above are the part that does not depend on a model at all.\n\n");
         text.append("| case | defective | tier | units | findings | kept | downgraded | dropped "
-                + "| invalid | hit line |\n");
-        text.append("|---|---|---|---|---|---|---|---|---|---|\n");
+                + "| merged | invalid | hit line |\n");
+        text.append("|---|---|---|---|---|---|---|---|---|---|---|\n");
         for (CaseOutcome outcome : cases) {
             text.append("| ").append(outcome.id())
                     .append(" | ").append(outcome.defective() ? outcome.kind() : "clean")
@@ -147,6 +153,7 @@ public final class EvalReport {
                     .append(" | ").append(outcome.kept())
                     .append(" | ").append(outcome.downgraded())
                     .append(" | ").append(outcome.dropped())
+                    .append(" | ").append(outcome.merged())
                     .append(" | ").append(outcome.invalidRetractions())
                     .append(" | ").append(outcome.defective()
                             ? (outcome.lineMatched() ? "yes" : "no") : "-")

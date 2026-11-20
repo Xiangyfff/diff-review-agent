@@ -81,8 +81,8 @@ public final class EvalRunner {
                         <= EvalReport.LINE_TOLERANCE);
         return List.of(new CaseOutcome(mutation.id(), mutation.defective(), mutation.kind(),
                 report.units().size(), tier, report.findings(), report.assertions(),
-                report.questions(), report.dropped(), report.invalidRetractions(), lineMatched,
-                anchorLine));
+                report.questions(), report.dropped(), report.merged(),
+                report.invalidRetractions(), lineMatched, anchorLine));
     }
 
     private static void prepare(Path workspace) throws IOException {

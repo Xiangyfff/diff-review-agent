@@ -9,6 +9,6 @@ package com.codereview.agent.eval;
  *                    lines of the anchor
  */
 public record CaseOutcome(String id, boolean defective, String kind, int unitsScheduled,
-        String tier, int findings, int kept, int downgraded, int dropped, int invalidRetractions,
-        boolean lineMatched, int anchorLine) {
+        String tier, int findings, int kept, int downgraded, int dropped, int merged,
+        int invalidRetractions, boolean lineMatched, int anchorLine) {
 }

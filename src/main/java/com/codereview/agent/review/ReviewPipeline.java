@@ -80,6 +80,8 @@ public final class ReviewPipeline {
         int findings = 0;
         int dropped = 0;
         int invalidRetractions = 0;
+        int merged = 0;
+        java.util.Set<String> seen = new java.util.HashSet<>();
 
         for (PlannedUnit unit : plan.scheduled()) {
             InvestigationResult result = investigator.investigate(taskOf(unit));
@@ -99,6 +101,13 @@ public final class ReviewPipeline {
                     dropped++;
                     continue;
                 }
+                // Two questions may end in the same statement at the same line. One comment per
+                // place and claim, otherwise the report repeats itself and the counts inflate.
+                String key = finding.file() + "|" + finding.line() + "|" + finding.statement();
+                if (!seen.add(key)) {
+                    merged++;
+                    continue;
+                }
                 comments.add(new Comment(finding.file(), finding.line(),
                         unit.category().name(), statusOf(verdict), finding.statement(),
                         finding.evidenceIds()));
@@ -108,7 +117,7 @@ public final class ReviewPipeline {
                     result.toolCalls(), result.findings().size(), verifyCalls));
         }
         return new ReviewReport(baseRevision, headRevision, plan.stats(), outcomes, comments,
-                findings, dropped, invalidRetractions);
+                findings, dropped, invalidRetractions, merged);
     }
 
     public static void main(String[] args) throws Exception {
@@ -127,7 +136,8 @@ public final class ReviewPipeline {
         System.out.println(report.units().size() + " units, " + report.comments().size()
                 + " comments (" + report.assertions() + " assertions, " + report.questions()
                 + " questions), " + report.dropped() + " findings rejected by the verifier, "
-                + report.invalidRetractions() + " retractions without evidence");
+                + report.invalidRetractions() + " retractions without evidence, "
+                + report.merged() + " duplicates merged");
         System.out.println("written to " + output.toAbsolutePath());
     }
 

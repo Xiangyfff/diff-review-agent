@@ -83,7 +83,8 @@ replays 16 mutations through the whole pipeline and writes `eval/latest-report.m
 | rule-gated recall (MUST, no model involved) | 64% (7/11) |
 | rule-gated false positives (MUST on clean changes) | 0% (0/5) |
 | end-to-end recall | 73% (8/11) |
-| kept / downgraded / dropped | 21 / 0 / 1 |
+| kept / downgraded / dropped | 15 / 0 / 1 |
+| duplicate comments merged | 6 |
 
 Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
 every structural change, so all five clean refactors get scheduled, and the verifier stand-in

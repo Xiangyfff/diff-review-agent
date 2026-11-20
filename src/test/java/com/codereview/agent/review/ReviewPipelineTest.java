@@ -131,8 +131,8 @@ class ReviewPipelineTest {
             ReviewReport report = ReviewPipeline.offline().run(repository, base, head);
 
             assertThat(report.findings()).isGreaterThanOrEqualTo(0);
-            assertThat(report.findings())
-                    .isEqualTo(report.comments().size() + report.dropped());
+            assertThat(report.findings()).isEqualTo(
+                    report.comments().size() + report.dropped() + report.merged());
             assertThat(report.renderMarkdown()).contains("Units investigated");
         }
     }
