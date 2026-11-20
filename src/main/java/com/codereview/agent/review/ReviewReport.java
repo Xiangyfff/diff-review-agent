@@ -16,7 +16,7 @@ import java.util.List;
  */
 public record ReviewReport(String baseRevision, String headRevision, TriageStats stats,
         List<UnitOutcome> units, List<Comment> comments, int findings, int dropped,
-        int invalidRetractions) {
+        int invalidRetractions, int merged) {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -43,6 +43,7 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
                 .append(", questions ").append(questions()).append(")")
                 .append(" | findings rejected by the verifier: ").append(dropped)
                 .append(" | retractions without evidence (kept): ").append(invalidRetractions)
+                .append(" | duplicates merged: ").append(merged)
                 .append("\n\n");
 
         if (!units.isEmpty()) {
@@ -82,6 +83,7 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
         root.put("findings", findings);
         root.put("dropped", dropped);
         root.put("invalidRetractions", invalidRetractions);
+        root.put("merged", merged);
 
         ArrayNode unitNodes = root.putArray("unitOutcomes");
         for (UnitOutcome unit : units) {
