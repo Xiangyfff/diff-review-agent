@@ -58,6 +58,20 @@ public final class SymbolIndex {
         return filesIndexed;
     }
 
+    /**
+     * @return where the name is declared, as far as the coarse index can tell (first site seen)
+     */
+    public java.util.Optional<Declaration> declaration(String symbol) {
+        return java.util.Optional.ofNullable(declarations.get(symbol));
+    }
+
+    /**
+     * @return every file whose source mentions the name, declaration file included
+     */
+    public Set<String> filesMentioning(String symbol) {
+        return filesBySymbol.getOrDefault(symbol, Set.of());
+    }
+
     public int parseFailures() {
         return parseFailures;
     }
