@@ -13,7 +13,13 @@ right. This project is built around those three failures.
 
 输入一次提交的差异，先做初审：把改动切成以函数为单位的分析单元，比较前后两版语法树，找出形状确实发生变化的地方——比如原本有一句判空、改完之后没有了，这和「代码里现在没有判空」是两件完全不同的事，现成的静态工具分不出来。再用一小组规则决定哪些单元必须查、哪些可以跳过。值得查的单元会拿到几个具体的待验证问题，留给下一段深挖逐个回答。初审只输出一份可以序列化的调查计划，不产生任何评论。
 
-当前进度：初审已完成，三十六个测试覆盖，全程离线可跑；深挖（工具调用与预算）、复核（专门反驳的评审员）、评估（用变异体做标准答案）还没开始。技术栈是 Java 21、JGit、JavaParser，模型层目前是一个薄接口，后面接 LangChain4j。
+深挖阶段把每个待查单元变成一场有预算的调查：模型每一轮只能在三个动作里选一个——调用一个只读工具、放弃并说明理由、或者在引用证据的前提下下结论。工具的返回全部进入一个带编号的证据库，结论只能引用真实拿到过的编号；编号对不上、引用的行不在证据范围内、讨论的符号没在证据原文里出现过，这三种情况都会被程序挡掉。
+
+复核阶段专门反驳：给它的任务不是「你觉得对吗」，而是「找出一个让这条结论不成立的具体事实，并且用工具读出来」。反驳同样必须引用本轮自己收集到的证据，拿不出证据就不算反驳——否则复核会靠感觉否掉真问题。
+
+评估用变异体做标准答案：在五个文件上注入十六个改动，十一个有明确缺陷，五个是等价重构，然后量三件事——单元级召回、干净改动被误排的比例、以及最终评论有没有落在缺陷那一行附近。
+
+当前进度：三段式全部落地，七十八个测试，全程离线可跑，也已经在真实仓库（spring-petclinic 的四个提交）上跑通过。模型层目前还是假模型，LangChain4j 适配器是下一步。技术栈是 Java 21、JGit、JavaParser、Jackson。
 
 ## How it works
 
@@ -27,21 +33,28 @@ null check that disappeared is a different event from one that was never there. 
 attention produce concrete questions the unit has to answer before it may be commented on. Units
 that do not earn a question are dropped; units that do are scheduled under a budget.
 
-**Investigate** (next) takes only the scheduled units, lets the agent loop over read-only tools under
-a hard budget, and produces findings that carry evidence ids.
+**Investigate** takes only the scheduled units and runs a bounded loop over five read-only tools. Its
+only three allowed moves are: call a tool, abandon a question with a reason, or conclude while citing
+evidence ids. Tool output never enters the conversation as free text — it goes into an evidence store
+and comes back as an id plus a summary, so a conclusion can point at it but cannot rewrite it.
 
-**Verify** (after that) is a critic that tries to refute each finding. Anything it can refute is
-dropped.
+**Verify** is a critic that must refute, not agree. A refutation has to cite evidence the critic read
+itself in this round; a refutation without evidence is counted and the finding stands. Survivors are
+kept as assertions, ones that cannot be proven either way are downgraded to questions, and only
+strong counter-evidence retracts.
 
 ## Status
 
 - [x] Triage — patch parsing, unit mapping, structural change detection, rule catalogue, tiering,
       question validation, name-level repo index, budgeted plan, deterministic offline model
-- [x] 45 tests, no network required
-- [ ] Investigate — tool loop, tool budget, evidence store
-- [ ] Verify — adversarial critic
-- [ ] Evaluation — mutation-based oracle and an ablation table
-- [ ] LangChain4j model adapter
+- [x] Investigate — five read-only tools, question queue, evidence store, five mechanical checks,
+      six counted outcomes
+- [x] Verify — evidence-backed refutation, keep / downgrade / retract
+- [x] Evaluation — 16 mutation cases, report written to `eval/latest-report.md`
+- [x] Pipeline — triage → investigate → verify → comments, one command
+- [x] 78 tests, no network required
+- [ ] LangChain4j model adapter (the model layer is still a deterministic stand-in)
+- [ ] Cheap gate for the judge tier (see the note in the evaluation section)
 
 ## Design notes
 
@@ -57,6 +70,28 @@ dropped.
   and scored without spending a model call.
 - **The model layer is a thin interface.** Tests run against a deterministic offline model; the
   LangChain4j adapter is one implementation behind it.
+
+## Evaluation
+
+`mvn -q compile` then `java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner`
+replays 16 mutations through the whole pipeline and writes `eval/latest-report.md` and
+`eval/latest-report.json`. Current numbers, with the offline stand-ins:
+
+| metric | value |
+|---|---|
+| triage unit recall | 100% (11/11) |
+| rule-gated recall (MUST, no model involved) | 64% (7/11) |
+| rule-gated false positives (MUST on clean changes) | 0% (0/5) |
+| end-to-end recall | 73% (8/11) |
+| kept / downgraded / dropped | 21 / 0 / 1 |
+
+Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
+every structural change, so all five clean refactors get scheduled, and the verifier stand-in
+retracts as soon as it reads a null check anywhere nearby — which is how one real defect
+(`resource-unclosed`) was dropped. Those rows measure wiring, not model quality. The rule-gated rows
+are the part no model can influence, and they are also the honest argument for the gate that is not
+built yet: the rules never over-escalate a clean change, but everything they do not gate falls into
+the judge tier, and that is where a real model has to earn its keep.
 
 ## Build
 
