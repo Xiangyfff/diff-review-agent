@@ -36,8 +36,8 @@ dropped.
 ## Status
 
 - [x] Triage — patch parsing, unit mapping, structural change detection, rule catalogue, tiering,
-      question validation, budgeted plan, deterministic offline model
-- [x] 36 tests, no network required
+      question validation, name-level repo index, budgeted plan, deterministic offline model
+- [x] 45 tests, no network required
 - [ ] Investigate — tool loop, tool budget, evidence store
 - [ ] Verify — adversarial critic
 - [ ] Evaluation — mutation-based oracle and an ablation table

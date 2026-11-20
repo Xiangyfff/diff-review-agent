@@ -77,6 +77,9 @@ public final class TriagePlanJson {
         if (unit.abstainReason() != null && !unit.abstainReason().isBlank()) {
             node.put("abstainReason", unit.abstainReason());
         }
+        if (unit.facts() != null && !unit.facts().isBlank()) {
+            node.put("facts", unit.facts());
+        }
 
         ArrayNode changes = node.putArray("changes");
         for (StructuralChange change : unit.changes()) {

@@ -40,6 +40,22 @@ public final class SourceParser {
     }
 
     /**
+     * Parses only when the whole file was understood.
+     *
+     * <p>The triage stage tolerates a partially parsed unit, because half a method still has a
+     * position and a shape. The repository index cannot: a file that only half parsed would
+     * contribute half its symbols and quietly understate how widely a name is used, so it is
+     * counted as a failure instead.
+     */
+    public Optional<CompilationUnit> parseComplete(String source) {
+        if (source == null || source.isBlank()) {
+            return Optional.empty();
+        }
+        ParseResult<CompilationUnit> result = new JavaParser(configuration).parse(source);
+        return result.isSuccessful() ? result.getResult() : Optional.empty();
+    }
+
+    /**
      * Parses a single member that was lifted out of its file (a method, a field, an
      * initializer block).
      *

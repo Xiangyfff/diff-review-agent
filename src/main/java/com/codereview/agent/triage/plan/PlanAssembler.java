@@ -31,7 +31,8 @@ public final class PlanAssembler {
             List<StructuralChange> changes,
             List<RuleHit> ruleHits,
             UnitAssessment assessment,
-            boolean parseFailed) {
+            boolean parseFailed,
+            String facts) {
     }
 
     public record Result(List<PlannedUnit> units, int invalidQuestions, int calibrationDisagreements) {
@@ -74,7 +75,7 @@ public final class PlanAssembler {
 
             planned.add(new PlannedUnit(candidate.unit(), candidate.tier(), candidate.category(),
                     candidate.tierReason(), candidate.changes(), candidate.ruleHits(), valid, synthetic,
-                    assessment.abstainReason(), false, candidate.parseFailed()));
+                    assessment.abstainReason(), false, candidate.parseFailed(), candidate.facts()));
         }
 
         return new Result(applyBudget(planned, maxInvestigateUnits), invalidQuestions, disagreements);
@@ -126,7 +127,7 @@ public final class PlanAssembler {
             } else {
                 result.add(new PlannedUnit(unit.unit(), unit.tier(), unit.category(), unit.tierReason(),
                         unit.changes(), unit.ruleHits(), unit.questions(), unit.syntheticQuestions(),
-                        unit.abstainReason(), true, unit.parseFailed()));
+                        unit.abstainReason(), true, unit.parseFailed(), unit.facts()));
             }
         }
         return result;

@@ -2,18 +2,25 @@ package com.codereview.agent.triage;
 
 import com.codereview.agent.triage.diff.FileChange;
 import com.codereview.agent.triage.diff.FileChange.ChangeType;
+import com.codereview.agent.triage.index.SymbolIndex;
 import com.codereview.agent.triage.model.ChangeOverview;
 import com.codereview.agent.triage.model.IntentSummary;
 import com.codereview.agent.triage.model.MockTriageModel;
 import com.codereview.agent.triage.model.TriageModel;
 import com.codereview.agent.triage.model.UnitAssessment;
 import com.codereview.agent.triage.model.UnitPrompt;
+import com.codereview.agent.triage.parse.SourceParser;
 import com.codereview.agent.triage.plan.PlannedUnit;
 import com.codereview.agent.triage.plan.TriagePlan;
+import com.codereview.agent.triage.rules.RuleCatalog;
+import com.codereview.agent.triage.screen.Screening;
 import com.codereview.agent.triage.tier.Tier;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -127,5 +134,35 @@ class TriageServiceTest {
         assertThat(plan.stats().unitsMust() + plan.stats().unitsJudge() + plan.stats().unitsSkip())
                 .isEqualTo(plan.stats().unitsTotal());
         assertThat(plan.stats().summary()).isNotBlank();
+    }
+
+    @Test
+    void repositoryFactsReachThePromptAsHintsNotVerdicts() {
+        List<UnitPrompt> seen = new ArrayList<>();
+        TriageModel capturing = new TriageModel() {
+            @Override
+            public UnitAssessment assess(UnitPrompt prompt) {
+                seen.add(prompt);
+                return new UnitAssessment(List.of(), true, "", "");
+            }
+
+            @Override
+            public IntentSummary summarize(ChangeOverview overview) {
+                return IntentSummary.empty();
+            }
+        };
+        String file = "src/main/java/com/shop/auth/LoginService.java";
+        SymbolIndex index = new SymbolIndex(
+                Map.of("lookup", Set.of(file, "src/main/java/com/shop/Caller.java")),
+                Map.of("lookup", new SymbolIndex.Declaration("lookup", file, 4, true, 1)),
+                2, 0, false);
+        TriageService service = new TriageService(capturing, TriageConfig.defaults(),
+                new Screening(), new SourceParser(), new RuleCatalog(RuleCatalog.defaults().rules()), index);
+
+        service.triage(List.of(nullGuardRemoval(file)), "base", "head");
+
+        assertThat(seen).hasSize(1);
+        assertThat(seen.get(0).facts()).contains("另外 1 个源文件").contains("public");
+        assertThat(seen.get(0).render()).contains("背景事实").contains("不能当成结论");
     }
 }

@@ -2,6 +2,9 @@ package com.codereview.agent.triage;
 
 import com.codereview.agent.triage.diff.FileChange;
 import com.codereview.agent.triage.diff.RepositoryChangeSource;
+import com.codereview.agent.triage.index.IndexBuilder;
+import com.codereview.agent.triage.index.SymbolFacts;
+import com.codereview.agent.triage.index.SymbolIndex;
 import com.codereview.agent.triage.model.ChangeOverview;
 import com.codereview.agent.triage.model.IntentSummary;
 import com.codereview.agent.triage.model.MockTriageModel;
@@ -60,6 +63,7 @@ public final class TriageService {
     private final PlanAssembler assembler;
     private final TriageModel model;
     private final TriageConfig config;
+    private final SymbolIndex index;
 
     public TriageService(TriageModel model, TriageConfig config) {
         this(model, config, new Screening(), new SourceParser(), new RuleCatalog(RuleCatalog.defaults().rules()));
@@ -67,6 +71,11 @@ public final class TriageService {
 
     public TriageService(TriageModel model, TriageConfig config, Screening screening,
                          SourceParser parser, RuleCatalog rules) {
+        this(model, config, screening, parser, rules, SymbolIndex.empty());
+    }
+
+    public TriageService(TriageModel model, TriageConfig config, Screening screening,
+                         SourceParser parser, RuleCatalog rules, SymbolIndex index) {
         this.screening = screening;
         this.parser = parser;
         this.mapper = new UnitMapper();
@@ -76,6 +85,7 @@ public final class TriageService {
         this.assembler = new PlanAssembler();
         this.model = model;
         this.config = config;
+        this.index = index;
     }
 
     public static TriageService offline() {
@@ -84,10 +94,16 @@ public final class TriageService {
 
     public TriagePlan triage(Path repositoryPath, String baseRevision, String headRevision) throws IOException {
         List<FileChange> changes = new RepositoryChangeSource().changes(repositoryPath, baseRevision, headRevision);
-        return triage(changes, baseRevision, headRevision);
+        SymbolIndex repositoryIndex = new IndexBuilder(parser).build(repositoryPath).index();
+        return plan(changes, baseRevision, headRevision, repositoryIndex);
     }
 
     public TriagePlan triage(List<FileChange> changes, String baseRevision, String headRevision) {
+        return plan(changes, baseRevision, headRevision, index);
+    }
+
+    private TriagePlan plan(List<FileChange> changes, String baseRevision, String headRevision,
+                            SymbolIndex symbolIndex) {
         int screenedOut = 0;
         List<FileChange> reviewed = new ArrayList<>();
         List<AnalysisUnit> units = new ArrayList<>();
@@ -105,7 +121,7 @@ public final class TriageService {
 
         AtomicInteger modelCalls = new AtomicInteger();
         AtomicInteger unparsed = new AtomicInteger();
-        List<PlanAssembler.Candidate> candidates = assessAll(units, modelCalls, unparsed);
+        List<PlanAssembler.Candidate> candidates = assessAll(units, modelCalls, unparsed, symbolIndex);
 
         PlanAssembler.Result assembled = assembler.assemble(candidates, config.maxInvestigateUnits());
 
@@ -122,14 +138,14 @@ public final class TriageService {
     }
 
     private List<PlanAssembler.Candidate> assessAll(List<AnalysisUnit> units, AtomicInteger modelCalls,
-                                                    AtomicInteger unparsed) {
+                                                    AtomicInteger unparsed, SymbolIndex symbolIndex) {
         if (units.isEmpty()) {
             return List.of();
         }
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<PlanAssembler.Candidate>> futures = new ArrayList<>(units.size());
             for (AnalysisUnit unit : units) {
-                futures.add(executor.submit(() -> assessOne(unit, modelCalls, unparsed)));
+                futures.add(executor.submit(() -> assessOne(unit, modelCalls, unparsed, symbolIndex)));
             }
             List<PlanAssembler.Candidate> candidates = new ArrayList<>(units.size());
             for (Future<PlanAssembler.Candidate> future : futures) {
@@ -144,7 +160,8 @@ public final class TriageService {
         }
     }
 
-    private PlanAssembler.Candidate assessOne(AnalysisUnit unit, AtomicInteger modelCalls, AtomicInteger unparsed) {
+    private PlanAssembler.Candidate assessOne(AnalysisUnit unit, AtomicInteger modelCalls, AtomicInteger unparsed,
+                                              SymbolIndex symbolIndex) {
         StructuralDeltaDetector.Detection detection = detector.detect(unit);
         if (!detection.parsed()) {
             unparsed.incrementAndGet();
@@ -153,15 +170,16 @@ public final class TriageService {
         List<RuleHit> hits = rules.evaluate(context);
         TierPolicy.Decision decision = tierPolicy.decide(context, hits);
 
+        String facts = factsFor(unit, symbolIndex);
         UnitAssessment assessment;
         if (decision.tier() == Tier.SKIP) {
             assessment = UnitAssessment.declining(decision.reason());
         } else {
             modelCalls.incrementAndGet();
-            assessment = assessWithModel(unit, decision, detection.changes());
+            assessment = assessWithModel(unit, decision, detection.changes(), facts);
         }
         return new PlanAssembler.Candidate(unit, decision.tier(), decision.category(), decision.reason(),
-                detection.changes(), hits, assessment, !detection.parsed());
+                detection.changes(), hits, assessment, !detection.parsed(), facts);
     }
 
     /**
@@ -170,9 +188,11 @@ public final class TriageService {
      * the assembler build a question from the rule evidence.
      */
     private UnitAssessment assessWithModel(AnalysisUnit unit, TierPolicy.Decision decision,
-                                           List<com.codereview.agent.triage.structure.StructuralChange> changes) {
+                                           List<com.codereview.agent.triage.structure.StructuralChange> changes,
+                                           String facts) {
         try {
-            UnitAssessment assessment = model.assess(UnitPrompt.of(unit, decision.tier(), decision.category(), changes));
+            UnitAssessment assessment = model.assess(
+                    UnitPrompt.of(unit, decision.tier(), decision.category(), changes, facts));
             if (assessment.questions().size() <= config.maxQuestionsPerUnit()) {
                 return assessment;
             }
@@ -190,6 +210,32 @@ public final class TriageService {
         }
         Optional<CompilationUnit> parsed = parser.parse(text);
         return parsed.orElse(null);
+    }
+
+    /**
+     * The index answers name-level questions only. When it cannot find the symbol the prompt
+     * stays silent rather than guessing, so the model never receives a fact nobody computed.
+     */
+    private static String factsFor(AnalysisUnit unit, SymbolIndex index) {
+        if (index.isEmpty()) {
+            return "";
+        }
+        SymbolFacts facts = index.factsFor(simpleName(unit.name()));
+        return facts.isEmpty() ? "" : facts.describe();
+    }
+
+    private static String simpleName(String unitName) {
+        String head = unitName;
+        int parameters = head.indexOf('(');
+        if (parameters > 0) {
+            head = head.substring(0, parameters);
+        }
+        int comma = head.indexOf(',');
+        if (comma > 0) {
+            head = head.substring(0, comma);
+        }
+        int dot = head.lastIndexOf('.');
+        return dot >= 0 ? head.substring(dot + 1) : head;
     }
 
     private static ChangeOverview overview(List<FileChange> files, List<PlannedUnit> units) {
