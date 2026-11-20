@@ -52,9 +52,11 @@ strong counter-evidence retracts.
 - [x] Verify — evidence-backed refutation, keep / downgrade / retract
 - [x] Evaluation — 16 mutation cases, report written to `eval/latest-report.md`
 - [x] Pipeline — triage → investigate → verify → comments, one command
-- [x] 78 tests, no network required
-- [ ] LangChain4j model adapter (the model layer is still a deterministic stand-in)
-- [ ] Cheap gate for the judge tier (see the note in the evaluation section)
+- [x] 100 tests, no network required
+- [x] LangChain4j model adapter — one class imports the SDK, everything else speaks prompts and JSON
+- [x] Cheap gate for the judge tier — a small, shapeless change never reaches the model
+- [ ] Real-model numbers (needs an API key; the offline numbers above come from the stand-ins)
+- [ ] GitHub App that posts the comments as a review
 
 ## Design notes
 
@@ -80,19 +82,26 @@ replays 16 mutations through the whole pipeline and writes `eval/latest-report.m
 | metric | value |
 |---|---|
 | triage unit recall | 100% (11/11) |
+| triage false positive rate | 60% (3/5) |
 | rule-gated recall (MUST, no model involved) | 64% (7/11) |
 | rule-gated false positives (MUST on clean changes) | 0% (0/5) |
 | end-to-end recall | 73% (8/11) |
-| kept / downgraded / dropped | 15 / 0 / 1 |
-| duplicate comments merged | 6 |
+| kept / downgraded / dropped | 13 / 0 / 1 |
+| duplicate comments merged | 5 |
 
 Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
-every structural change, so all five clean refactors get scheduled, and the verifier stand-in
-retracts as soon as it reads a null check anywhere nearby — which is how one real defect
-(`resource-unclosed`) was dropped. Those rows measure wiring, not model quality. The rule-gated rows
-are the part no model can influence, and they are also the honest argument for the gate that is not
-built yet: the rules never over-escalate a clean change, but everything they do not gate falls into
-the judge tier, and that is where a real model has to earn its keep.
+every structural change, and the verifier stand-in retracts as soon as it reads a null check anywhere
+nearby — which is how one real defect (`resource-unclosed`) was dropped. Those rows measure wiring, not
+model quality. The rule-gated rows are the part no model can influence.
+
+The cheap gate is what moved the false-positive rate from 100% to 60% without touching recall: a unit
+whose changed parts are all shapeless leftovers and whose diff is four lines or fewer is skipped
+without a model call. It is deliberately conservative — any rule hit, mandatory or advisory, wins over
+it, because a one-line condition flip is exactly the small change that must not be waved through.
+
+To measure against a real model, set `CODEREVIEW_LLM_API_KEY` (and optionally
+`CODEREVIEW_LLM_BASE_URL`, `CODEREVIEW_LLM_MODEL`) and run `ReviewPipeline` instead of the offline
+stand-ins; the harness itself is unchanged.
 
 ## Build
 

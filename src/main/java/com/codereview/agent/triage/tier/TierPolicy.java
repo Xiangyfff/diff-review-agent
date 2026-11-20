@@ -3,6 +3,7 @@ package com.codereview.agent.triage.tier;
 import com.codereview.agent.triage.rules.RiskCategory;
 import com.codereview.agent.triage.rules.RuleContext;
 import com.codereview.agent.triage.rules.RuleHit;
+import com.codereview.agent.triage.structure.StructuralChange;
 import com.codereview.agent.triage.unit.AnalysisUnit;
 import com.codereview.agent.triage.unit.SourceUnit;
 
@@ -17,6 +18,16 @@ import java.util.List;
  * expensive as the stage itself, and nothing about it would be reproducible.
  */
 public final class TierPolicy {
+
+    /**
+     * Prefix of the reason recorded when the cheap gate, rather than the model, decided a unit was
+     * not worth a look. It is a prefix rather than a flag so the plan stays a flat, readable record
+     * and the count can be recovered from it.
+     */
+    public static final String CHEAP_GATE_REASON = "cheap gate: ";
+
+    /** Above this many changed lines, "small" stops being a defensible description. */
+    private static final int SMALL_CHANGE_LINES = 4;
 
     public record Decision(Tier tier, RiskCategory category, String reason) {
 
@@ -43,10 +54,38 @@ public final class TierPolicy {
                     "rule " + gating.rule().id() + " requires investigation: " + gating.rule().rationale());
         }
         if (hits.isEmpty()) {
+            if (smallAndShapeless(context)) {
+                return new Decision(Tier.SKIP, category, CHEAP_GATE_REASON
+                        + "a small change whose parts have no recognised shape");
+            }
             return new Decision(Tier.JUDGE, category, "no rule matched; the model decides");
         }
         return new Decision(Tier.JUDGE, category,
                 "only advisory rules matched: " + hits.stream().map(hit -> hit.rule().id()).toList());
+    }
+
+    /**
+     * The cheap gate: a handful of changed lines where every part is an unrecognised leftover — a
+     * statement added, a statement removed, no shape worth naming.
+     *
+     * <p>It is deliberately conservative. A mandatory rule still wins, and so does an advisory one:
+     * a one-line condition flip is exactly the small change that must not be waved through. The gate
+     * only fires when nothing at all was recognised, which is the case that used to burn a model call
+     * to be told "nothing here". Anything bigger, or anything whose shape has a name, still goes to
+     * the model.
+     */
+    private static boolean smallAndShapeless(RuleContext context) {
+        AnalysisUnit unit = context.unit();
+        if (unit.addedLines() + unit.removedLines() > SMALL_CHANGE_LINES) {
+            return false;
+        }
+        return context.changes().stream().allMatch(change ->
+                change.kind() == StructuralChange.Kind.STATEMENTS_ADDED
+                        || change.kind() == StructuralChange.Kind.STATEMENTS_DELETED);
+    }
+
+    public static boolean isCheapGate(String reason) {
+        return reason != null && reason.startsWith(CHEAP_GATE_REASON);
     }
 
     /**

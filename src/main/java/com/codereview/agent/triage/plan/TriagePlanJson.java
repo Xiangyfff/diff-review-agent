@@ -44,6 +44,7 @@ public final class TriagePlanJson {
         stats.put("unitsSkip", plan.stats().unitsSkip());
         stats.put("unitsScheduled", plan.stats().unitsScheduled());
         stats.put("unitsBudgetSkipped", plan.stats().unitsBudgetSkipped());
+        stats.put("cheapGateSkipped", plan.cheapGateSkipped());
         stats.put("invalidQuestions", plan.stats().invalidQuestions());
         stats.put("calibrationDisagreements", plan.stats().calibrationDisagreements());
         stats.put("unparsedUnits", plan.stats().unparsedUnits());

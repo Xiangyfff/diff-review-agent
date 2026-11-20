@@ -21,6 +21,7 @@
     <slf4j.version>1.7.36</slf4j.version>
     <junit.version>5.12.2</junit.version>
     <assertj.version>3.27.7</assertj.version>
+    <langchain4j.version>1.24.0</langchain4j.version>
   </properties>
 
   <dependencies>
@@ -43,6 +44,11 @@
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
       <version>${slf4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-open-ai</artifactId>
+      <version>${langchain4j.version}</version>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
