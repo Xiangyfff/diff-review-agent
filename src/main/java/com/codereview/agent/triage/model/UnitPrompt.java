@@ -22,15 +22,26 @@ public record UnitPrompt(
         RiskCategory category,
         List<StructuralChange> changes,
         String before,
-        String after) {
+        String after,
+        String facts) {
 
     public UnitPrompt {
         changes = List.copyOf(changes);
+        facts = facts == null ? "" : facts;
     }
 
     public static UnitPrompt of(AnalysisUnit unit, Tier tier, RiskCategory category, List<StructuralChange> changes) {
+        return of(unit, tier, category, changes, "");
+    }
+
+    /**
+     * @param facts repository-wide hints from the symbol index, already rendered as one line;
+     *              empty when no index was built for this run
+     */
+    public static UnitPrompt of(AnalysisUnit unit, Tier tier, RiskCategory category,
+                                List<StructuralChange> changes, String facts) {
         return new UnitPrompt(unit.key(), unit.file(), unit.startLine(), tier, category,
-                changes, unit.textBefore(), unit.textAfter());
+                changes, unit.textBefore(), unit.textAfter(), facts);
     }
 
     /**
@@ -44,6 +55,11 @@ public record UnitPrompt(
         prompt.append("文件：").append(file).append("，起始行：").append(line).append('\n');
         prompt.append("单元：").append(unitKey).append('\n');
         prompt.append("风险类别：").append(category).append("（类别只用于排序，不是严重度）\n\n");
+
+        if (!facts.isBlank()) {
+            prompt.append("背景事实（按名字统计的粗信号，不能当成结论）：\n");
+            prompt.append(facts).append("\n\n");
+        }
 
         prompt.append("程序检测到的结构变化：\n");
         if (changes.isEmpty()) {

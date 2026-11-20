@@ -28,13 +28,15 @@ public record PlannedUnit(
         boolean syntheticQuestions,
         String abstainReason,
         boolean budgetSkipped,
-        boolean parseFailed) {
+        boolean parseFailed,
+        String facts) {
 
     public PlannedUnit {
         changes = List.copyOf(changes);
         ruleHits = List.copyOf(ruleHits);
         questions = List.copyOf(questions);
         abstainReason = abstainReason == null ? "" : abstainReason;
+        facts = facts == null ? "" : facts;
     }
 
     /** Whether the expensive stage will actually run on this unit. */
