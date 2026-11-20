@@ -19,13 +19,24 @@ public final class EvalReport {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final List<CaseOutcome> cases;
+    private final String models;
 
     public EvalReport(List<CaseOutcome> cases) {
+        this(cases, "deterministic offline stand-ins");
+    }
+
+    public EvalReport(List<CaseOutcome> cases, String models) {
         this.cases = List.copyOf(cases);
+        this.models = models;
     }
 
     public List<CaseOutcome> cases() {
         return cases;
+    }
+
+    /** Which models produced these numbers. Every row is only meaningful next to this line. */
+    public String models() {
+        return models;
     }
 
     public long defective() {
@@ -118,6 +129,7 @@ public final class EvalReport {
         text.append("Corpus: ").append(cases.size()).append(" mutations, ")
                 .append(defective()).append(" of them introduce a known defect, ")
                 .append(clean()).append(" are clean refactors.\n\n");
+        text.append("Models: ").append(models).append("\n\n");
         text.append("| metric | value |\n|---|---|\n");
         text.append("| triage unit recall | ").append(percent(triageRecall())).append(" (")
                 .append(defectiveScheduled()).append('/').append(defective()).append(") |\n");
@@ -164,6 +176,7 @@ public final class EvalReport {
 
     public String renderJson() {
         ObjectNode root = MAPPER.createObjectNode();
+        root.put("models", models);
         root.put("summary", summary());
         ObjectNode metrics = root.putObject("metrics");
         metrics.put("cases", cases.size());

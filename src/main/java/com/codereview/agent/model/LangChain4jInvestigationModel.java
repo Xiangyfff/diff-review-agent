@@ -1,6 +1,6 @@
 package com.codereview.agent.model;
 
-import com.codereview.agent.investigate.Evidence;
+import com.codereview.agent.investigate.EvidenceWindow;
 import com.codereview.agent.investigate.InvestigationModel;
 import com.codereview.agent.investigate.InvestigationState;
 import com.codereview.agent.investigate.ModelTurn;
@@ -97,9 +97,12 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
         text.append("你已取得的证据（结论只能引用这些编号）：\n");
         if (state.evidence().isEmpty()) {
             text.append("- 无\n");
-        }
-        for (Evidence evidence : state.evidence()) {
-            text.append("- ").append(evidence.cite()).append("：").append(summary(evidence)).append('\n');
+        } else {
+            // Older evidence folds to its id and location; the newest few stay verbatim. Nothing is
+            // deleted — the checks at conclusion time read the store, not this prompt — but a prompt
+            // that grows with every tool call is how a loop like this quietly stops being affordable.
+            text.append(EvidenceWindow.render(state.evidence(), java.util.Set.of(),
+                    EvidenceWindow.DEFAULT_FULL_LIMIT));
         }
         text.append('\n');
 
@@ -107,15 +110,6 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
         text.append("预算：已调用 ").append(state.toolCallsUsed()).append(" 次，还剩 ")
                 .append(state.toolCallsLeft()).append(" 次。\n");
         return text.toString();
-    }
-
-    private static String summary(Evidence evidence) {
-        String first = evidence.text();
-        int newline = first.indexOf('\n');
-        if (newline > 0) {
-            first = first.substring(0, newline);
-        }
-        return first.length() > 120 ? first.substring(0, 120) + "…" : first;
     }
 
     private static final String SHAPE = """

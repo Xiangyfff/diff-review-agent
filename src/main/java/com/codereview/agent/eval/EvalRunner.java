@@ -22,12 +22,18 @@ import java.util.Map;
  */
 public final class EvalRunner {
 
-    private static final ReviewPipeline PIPELINE = ReviewPipeline.offline();
-
     private EvalRunner() {
     }
 
     public static EvalReport run(Path workspace) throws Exception {
+        return run(workspace, ReviewPipeline.offline());
+    }
+
+    /**
+     * @param pipeline the exact pipeline under test, so the offline stand-ins and a real model are
+     *                 measured by the same harness rather than by two slightly different ones
+     */
+    public static EvalReport run(Path workspace, ReviewPipeline pipeline) throws Exception {
         prepare(workspace);
         try (Git git = Git.init().setDirectory(workspace.toFile()).call()) {
             Map<String, String> files = EvalCorpus.baseFiles();
@@ -52,29 +58,38 @@ public final class EvalRunner {
                 commit(git, mutation.id());
                 String head = head(git);
 
-                outcomes.addAll(analyse(workspace, base, head, mutation, anchorLine));
+                outcomes.addAll(analyse(pipeline, workspace, base, head, mutation, anchorLine));
                 base = head;
             }
-            return new EvalReport(outcomes);
+            return new EvalReport(outcomes, pipeline.modelDescription());
         }
     }
 
     public static void main(String[] args) throws Exception {
-        Path workspace = Path.of(args.length > 0 ? args[0] : "target/eval-corpus");
-        Path output = Path.of(args.length > 1 ? args[1] : "eval");
-        EvalReport report = run(workspace);
+        List<String> options = java.util.Arrays.asList(args);
+        boolean real = options.contains("--real");
+        Path workspace = Path.of(args.length > 0 && !args[0].startsWith("--")
+                ? args[0] : "target/eval-corpus");
+        Path output = Path.of(args.length > 1 && !args[1].startsWith("--") ? args[1] : "eval");
+        ReviewPipeline pipeline = real
+                ? new ReviewPipeline(com.codereview.agent.model.ReviewModels.fromEnvironment(),
+                        com.codereview.agent.investigate.InvestigateConfig.defaults(),
+                        com.codereview.agent.verify.VerifyConfig.defaults())
+                : ReviewPipeline.offline();
+        EvalReport report = run(workspace, pipeline);
         Files.createDirectories(output);
         Files.writeString(output.resolve("latest-report.md"), report.renderMarkdown(),
                 StandardCharsets.UTF_8);
         Files.writeString(output.resolve("latest-report.json"), report.renderJson(),
                 StandardCharsets.UTF_8);
         System.out.println(report.summary());
+        System.out.println("models: " + report.models());
         System.out.println("written to " + output.toAbsolutePath());
     }
 
-    private static List<CaseOutcome> analyse(Path root, String base, String head,
-            MutationCase mutation, int anchorLine) throws Exception {
-        ReviewReport report = PIPELINE.run(root, base, head);
+    private static List<CaseOutcome> analyse(ReviewPipeline pipeline, Path root, String base,
+            String head, MutationCase mutation, int anchorLine) throws Exception {
+        ReviewReport report = pipeline.run(root, base, head);
         String tier = report.units().isEmpty() ? "SKIP" : report.units().get(0).tier();
         boolean lineMatched = report.comments().stream()
                 .anyMatch(comment -> Math.abs(comment.line() - anchorLine)

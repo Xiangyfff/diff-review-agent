@@ -52,7 +52,7 @@ strong counter-evidence retracts.
 - [x] Verify — evidence-backed refutation, keep / downgrade / retract
 - [x] Evaluation — 16 mutation cases, report written to `eval/latest-report.md`
 - [x] Pipeline — triage → investigate → verify → comments, one command
-- [x] 100 tests, no network required
+- [x] 107 tests, no network required
 - [x] LangChain4j model adapter — one class imports the SDK, everything else speaks prompts and JSON
 - [x] Cheap gate for the judge tier — a small, shapeless change never reaches the model
 - [ ] Real-model numbers (needs an API key; the offline numbers above come from the stand-ins)
@@ -70,6 +70,10 @@ strong counter-evidence retracts.
   reproducible, and explainable in the plan.
 - **Triage is separable.** Its output is a JSON plan, so it can be run alone, diffed between runs,
   and scored without spending a model call.
+- **Evidence is folded, not deleted.** The store keeps every excerpt and the conclusion-time checks
+  read the store, not the prompt. In the prompt, the newest few entries stay verbatim and older ones
+  collapse to their id and location, so they remain citable and re-readable through a tool call. On a
+  unit that gathers ten excerpts the evidence block drops from 2,820 to 480 characters.
 - **The model layer is a thin interface.** Tests run against a deterministic offline model; the
   LangChain4j adapter is one implementation behind it.
 

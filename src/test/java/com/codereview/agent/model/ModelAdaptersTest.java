@@ -103,6 +103,43 @@ class ModelAdaptersTest {
     }
 
     @Test
+    void theInvestigationPromptFoldsOldEvidenceInsteadOfRepeatingIt() {
+        List<com.codereview.agent.investigate.Evidence> evidence = new ArrayList<>();
+        int naive = 0;
+        for (int index = 1; index <= 10; index++) {
+            StringBuilder text = new StringBuilder("line " + index + " of file " + index + "\n");
+            for (int row = 0; row < 8; row++) {
+                text.append("    statement number ").append(row).append(" in unit ").append(index)
+                        .append("\n");
+            }
+            naive += text.length();
+            evidence.add(new com.codereview.agent.investigate.Evidence("ev-" + index, "read_lines",
+                    "src/F" + index + ".java", 1, 9, text.toString()));
+        }
+        var state = new com.codereview.agent.investigate.InvestigationState("METHOD#X.y()",
+                "src/X.java", 10, "void y() {}", "void y() { }", List.of("statement added"),
+                List.of(new com.codereview.agent.investigate.Question("q1", "这个值可能为空吗？")),
+                evidence, 3, 5);
+
+        List<String> prompts = new ArrayList<>();
+        Chat chat = (system, user) -> {
+            prompts.add(user);
+            return "{\"action\":\"conclude\",\"question\":\"q1\",\"statement\":\"`y` 需要确认\","
+                    + "\"evidence\":[\"ev-10\"],\"line\":12}";
+        };
+
+        ModelTurn turn = new LangChain4jInvestigationModel(chat,
+                new com.codereview.agent.investigate.Toolbox(List.of())).next(state);
+
+        assertThat(turn).isInstanceOf(ModelTurn.Conclude.class);
+        assertThat(prompts).hasSize(1);
+        String prompt = prompts.get(0);
+        assertThat(prompt).contains("已折叠");
+        assertThat(prompt.length()).isLessThan(naive);
+        assertThat(prompt.length()).isLessThan((int) (naive * 0.6));
+    }
+
+    @Test
     void asksAgainOnceWhenTheFirstReplyIsNotJson() {
         List<String> prompts = new ArrayList<>();
         Chat chat = (system, user) -> {
