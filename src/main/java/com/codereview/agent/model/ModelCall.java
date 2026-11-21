@@ -25,4 +25,24 @@ final class ModelCall {
             return second;
         }
     }
+
+    /**
+     * Same repair policy, but the answer is constrained by a forced tool call rather than by asking
+     * nicely for JSON. A provider that honours tool choice cannot answer in the wrong shape, which
+     * removes the whole class of "the model added a sentence before the object" failures.
+     */
+    static String ask(Chat chat, String system, String user, String toolName,
+                      String toolDescription, String parametersJson) {
+        String first = chat.completeStructured(system, user, toolName, toolDescription, parametersJson);
+        try {
+            JsonReplies.object(first);
+            return first;
+        } catch (RuntimeException failure) {
+            String repair = user + "\n\n上一次调用 " + toolName + " 时给出的参数不是合法的 JSON 对象（"
+                    + failure.getMessage() + "）。请重新调用同一个工具，只传参数。";
+            String second = chat.completeStructured(system, repair, toolName, toolDescription, parametersJson);
+            JsonReplies.object(second);
+            return second;
+        }
+    }
 }

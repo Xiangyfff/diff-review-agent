@@ -1,6 +1,7 @@
 package com.codereview.agent.model;
 
 import com.codereview.agent.investigate.ModelTurn;
+import com.codereview.agent.triage.model.ChangeOverview;
 import com.codereview.agent.triage.model.UnitAssessment;
 import com.codereview.agent.verify.Verdict;
 import org.junit.jupiter.api.Test;
@@ -157,5 +158,56 @@ class ModelAdaptersTest {
         Chat chat = (system, user) -> "still not json";
         assertThatThrownBy(() -> ModelCall.ask(chat, "system", "原始请求"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void theStructuredCallIsWhatTheAdaptersUse() {
+        List<String> tools = new ArrayList<>();
+        Chat chat = new Chat() {
+            @Override
+            public String complete(String system, String user) {
+                throw new AssertionError("the adapter should ask through the structured call");
+            }
+
+            @Override
+            public String completeStructured(String system, String user, String toolName,
+                                             String toolDescription, String parametersJson) {
+                tools.add(toolName);
+                assertThat(parametersJson).contains("crossFileConcerns");
+                return "{\"intent\":\"加一层校验\",\"crossFileConcerns\":[]}";
+            }
+        };
+
+        var intent = new LangChain4jTriageModel(chat)
+                .summarize(new ChangeOverview(List.of(), 3, 1, 2));
+
+        assertThat(intent.intent()).isEqualTo("加一层校验");
+        assertThat(tools).containsExactly("emit_summary");
+    }
+
+    @Test
+    void aMalformedStructuredReplyIsAskedAgainUnderTheSameTool() {
+        List<String> prompts = new ArrayList<>();
+        Chat chat = new Chat() {
+            @Override
+            public String complete(String system, String user) {
+                throw new AssertionError("unused");
+            }
+
+            @Override
+            public String completeStructured(String system, String user, String toolName,
+                                             String toolDescription, String parametersJson) {
+                prompts.add(user);
+                return prompts.size() == 1
+                        ? "好的，这是结果：not json"
+                        : "{\"intent\":\"ok\",\"crossFileConcerns\":[]}";
+            }
+        };
+
+        String reply = ModelCall.ask(chat, "system", "问题", "emit_summary", "说明",
+                Schemas.TRIAGE_SUMMARY);
+
+        assertThat(reply).contains("\"ok\"");
+        assertThat(prompts.get(1)).contains("emit_summary").contains("重新调用同一个工具");
     }
 }

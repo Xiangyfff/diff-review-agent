@@ -20,6 +20,11 @@ import java.util.List;
  */
 public final class LangChain4jTriageModel implements TriageModel {
 
+    private static final String DESCRIPTION =
+            "初审对一个改动单元的判断：待验证的问题、是否值得深挖、不查时的理由";
+
+    private static final String SUMMARY_DESCRIPTION = "对整次改动的概括与跨文件疑点";
+
     private static final String SYSTEM = """
             你是代码审查助手的初审环节。你的工作不是下结论，而是提出具体、可被工具回答的问题。
             规则：问题必须指向输入里出现过的具体符号或位置；每条只问一件事；不评论输入里没有的代码；
@@ -47,13 +52,15 @@ public final class LangChain4jTriageModel implements TriageModel {
 
     @Override
     public UnitAssessment assess(UnitPrompt prompt) {
-        String reply = ModelCall.ask(chat, SYSTEM, prompt.render() + "\n\n" + ASSESS_SHAPE);
+        String reply = ModelCall.ask(chat, SYSTEM, prompt.render() + "\n\n" + ASSESS_SHAPE,
+                "emit_assessment", DESCRIPTION, Schemas.TRIAGE_ASSESSMENT);
         return assessmentFrom(JsonReplies.object(reply));
     }
 
     @Override
     public IntentSummary summarize(ChangeOverview overview) {
-        String reply = ModelCall.ask(chat, SYSTEM, render(overview) + "\n\n" + SUMMARY_SHAPE);
+        String reply = ModelCall.ask(chat, SYSTEM, render(overview) + "\n\n" + SUMMARY_SHAPE,
+                "emit_summary", SUMMARY_DESCRIPTION, Schemas.TRIAGE_SUMMARY);
         JsonNode node = JsonReplies.object(reply);
         return new IntentSummary(JsonReplies.text(node, "intent"),
                 JsonReplies.strings(node, "crossFileConcerns"));

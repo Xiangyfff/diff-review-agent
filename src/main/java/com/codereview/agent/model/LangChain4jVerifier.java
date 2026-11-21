@@ -46,7 +46,9 @@ public final class LangChain4jVerifier implements Verifier {
         StringBuilder transcript = new StringBuilder();
         for (int turn = 0; turn < MAX_TURNS; turn++) {
             String reply = ModelCall.ask(chat, SYSTEM,
-                    request.render() + transcript + "\n本轮剩余工具调用次数：" + session.callsLeft());
+                    request.render() + transcript + "\n本轮剩余工具调用次数：" + session.callsLeft(),
+                    "emit_verdict", "对一条结论的裁决：调工具找反证、维持、降级为疑问，或撤销",
+                    Schemas.VERDICT);
             JsonNode node = JsonReplies.object(reply);
             String action = JsonReplies.text(node, "action");
             if ("tool".equals(action)) {
