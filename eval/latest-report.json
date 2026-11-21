@@ -1,6 +1,6 @@
 {
   "models" : "deepseek-chat at https://api.deepseek.com/v1",
-  "summary" : "cases=22 defective=16 scheduled=14 triageRecall=88% | clean=6 flagged=1 triageFPR=17% | findings=8 kept=5 downgraded=10 dropped=0 merged=0 invalidRetractions=0 | endToEndRecall=81%",
+  "summary" : "cases=22 defective=16 scheduled=14 triageRecall=88% | clean=6 flagged=1 triageFPR=17% | findings=10 kept=7 downgraded=9 dropped=0 merged=0 invalidRetractions=0 | endToEndRecall=81% | evidenceBacked=50%",
   "metrics" : {
     "cases" : 22,
     "defective" : 16,
@@ -10,9 +10,10 @@
     "cleanScheduled" : 1,
     "triageFalsePositiveRate" : 0.16666666666666666,
     "endToEndRecall" : 0.8125,
-    "findings" : 8,
-    "kept" : 5,
-    "downgraded" : 10,
+    "evidenceBackedRecall" : 0.5,
+    "findings" : 10,
+    "kept" : 7,
+    "downgraded" : 9,
     "dropped" : 0,
     "invalidRetractions" : 0
   },
@@ -28,6 +29,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : true,
     "anchorLine" : 19
   }, {
     "id" : "exception-swallowed",
@@ -35,12 +37,13 @@
     "kind" : "exception",
     "tier" : "MUST_INVESTIGATE",
     "unitsScheduled" : 1,
-    "findings" : 1,
-    "kept" : 1,
+    "findings" : 2,
+    "kept" : 2,
     "downgraded" : 0,
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : true,
     "anchorLine" : 26
   }, {
     "id" : "early-exit-removed",
@@ -54,6 +57,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : false,
+    "evidenceBacked" : false,
     "anchorLine" : 44
   }, {
     "id" : "annotation-removed",
@@ -67,6 +71,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : true,
     "anchorLine" : 30
   }, {
     "id" : "log-line-added",
@@ -80,6 +85,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : false,
+    "evidenceBacked" : false,
     "anchorLine" : 41
   }, {
     "id" : "condition-inverted",
@@ -88,11 +94,12 @@
     "tier" : "MUST_INVESTIGATE",
     "unitsScheduled" : 1,
     "findings" : 1,
-    "kept" : 0,
-    "downgraded" : 1,
+    "kept" : 1,
+    "downgraded" : 0,
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : true,
     "anchorLine" : 8
   }, {
     "id" : "synchronized-added",
@@ -106,6 +113,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : false,
     "anchorLine" : 14
   }, {
     "id" : "local-renamed",
@@ -119,6 +127,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : false,
+    "evidenceBacked" : false,
     "anchorLine" : 19
   }, {
     "id" : "constant-extracted",
@@ -132,6 +141,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : false,
+    "evidenceBacked" : false,
     "anchorLine" : 15
   }, {
     "id" : "resource-unclosed",
@@ -145,6 +155,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : false,
+    "evidenceBacked" : false,
     "anchorLine" : 20
   }, {
     "id" : "query-concatenated",
@@ -158,6 +169,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : false,
+    "evidenceBacked" : false,
     "anchorLine" : 26
   }, {
     "id" : "comment-added",
@@ -171,6 +183,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : false,
+    "evidenceBacked" : false,
     "anchorLine" : 29
   }, {
     "id" : "visibility-narrowed",
@@ -178,12 +191,13 @@
     "kind" : "contract",
     "tier" : "MUST_INVESTIGATE",
     "unitsScheduled" : 1,
-    "findings" : 0,
+    "findings" : 1,
     "kept" : 0,
     "downgraded" : 1,
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : true,
     "anchorLine" : 15
   }, {
     "id" : "signature-changed",
@@ -197,6 +211,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : false,
     "anchorLine" : 23
   }, {
     "id" : "statements-reordered",
@@ -210,6 +225,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : false,
     "anchorLine" : 30
   }, {
     "id" : "auth-null-checks-removed",
@@ -223,6 +239,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : false,
     "anchorLine" : 11
   }, {
     "id" : "boundary-off-by-one",
@@ -236,6 +253,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : false,
     "anchorLine" : 7
   }, {
     "id" : "negative-quantity-check-removed",
@@ -249,6 +267,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : false,
     "anchorLine" : 26
   }, {
     "id" : "guard-kept-but-logged",
@@ -262,6 +281,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : false,
+    "evidenceBacked" : false,
     "anchorLine" : 36
   }, {
     "id" : "case-insensitive-password",
@@ -275,6 +295,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : true,
     "anchorLine" : 11
   }, {
     "id" : "password-logged",
@@ -288,6 +309,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : true,
     "anchorLine" : 7
   }, {
     "id" : "validation-after-use",
@@ -301,6 +323,7 @@
     "dropped" : 0,
     "invalidRetractions" : 0,
     "lineMatched" : true,
+    "evidenceBacked" : true,
     "anchorLine" : 30
   } ]
 }

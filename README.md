@@ -108,9 +108,10 @@ Real model (`deepseek-chat`, temperature 0), latest run of 22 cases:
 | triage false positive rate | 17% (1/6) |
 | rule-gated recall (MUST, no model involved) | 88% (14/16) |
 | rule-gated false positives (MUST on clean changes) | 17% (1/6) |
-| end-to-end recall | 81% (13/16) |
-| findings | 8 |
-| kept / downgraded / dropped | 5 / 10 / 0 |
+| end-to-end recall, any comment near the line | 81% (13/16) |
+| end-to-end recall, comment cites evidence | 50% (8/16) |
+| findings | 10 |
+| kept / downgraded / dropped | 7 / 9 / 0 |
 
 Offline stand-ins, same corpus:
 
@@ -120,6 +121,12 @@ Offline stand-ins, same corpus:
 | triage false positive rate | 33% (2/6) |
 | end-to-end recall | 75% (12/16) |
 | kept / downgraded / dropped | 16 / 0 / 1 |
+
+The gap between the two end-to-end rows is the most important number here. When a
+must-investigate unit ends without evidence, the pipeline still posts a question pointing at the
+right place — useful to a reviewer, but not a detection. Counting those as hits would have reported
+81% and the stricter row reports 50%. Both are printed because the second one is the claim that
+survives a hostile reader.
 
 Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
 every structural change, and the verifier stand-in retracts as soon as it reads a null check anywhere

@@ -107,6 +107,15 @@ public final class EvalReport {
         return ratio(cleanScheduled(), clean());
     }
 
+    /** Defects hit by a comment that cited evidence, which is the only kind that counts as proof. */
+    public long evidenceBackedRecall() {
+        return cases.stream().filter(c -> c.defective() && c.evidenceBacked()).count();
+    }
+
+    public double evidenceBackedRate() {
+        return ratio(evidenceBackedRecall(), defective());
+    }
+
     public double endToEndRecall() {
         return ratio(defectiveHit(), defective());
     }
@@ -120,7 +129,8 @@ public final class EvalReport {
                 + " | findings=" + findings() + " kept=" + kept() + " downgraded=" + downgraded()
                 + " dropped=" + dropped() + " merged=" + merged()
                 + " invalidRetractions=" + invalidRetractions()
-                + " | endToEndRecall=" + percent(endToEndRecall());
+                + " | endToEndRecall=" + percent(endToEndRecall())
+                + " | evidenceBacked=" + percent(evidenceBackedRate());
     }
 
     public String renderMarkdown() {
@@ -141,8 +151,12 @@ public final class EvalReport {
         text.append("| rule-gated false positives (MUST on clean changes) | ")
                 .append(percent(ratio(cleanMust(), clean()))).append(" (")
                 .append(cleanMust()).append('/').append(clean()).append(") |\n");
-        text.append("| end-to-end recall | ").append(percent(endToEndRecall())).append(" (")
+        text.append("| end-to-end recall (any comment near the line) | ")
+                .append(percent(endToEndRecall())).append(" (")
                 .append(defectiveHit()).append('/').append(defective()).append(") |\n");
+        text.append("| end-to-end recall (comment cites evidence) | ")
+                .append(percent(evidenceBackedRate())).append(" (")
+                .append(evidenceBackedRecall()).append('/').append(defective()).append(") |\n");
         text.append("| findings | ").append(findings()).append(" |\n");
         text.append("| kept / downgraded / dropped | ").append(kept()).append(" / ")
                 .append(downgraded()).append(" / ").append(dropped()).append(" |\n");
@@ -175,7 +189,8 @@ public final class EvalReport {
                     .append(" | ").append(outcome.merged())
                     .append(" | ").append(outcome.invalidRetractions())
                     .append(" | ").append(outcome.defective()
-                            ? (outcome.lineMatched() ? "yes" : "no") : "-")
+                            ? (outcome.evidenceBacked() ? "yes"
+                                    : (outcome.lineMatched() ? "near, no evidence" : "no")) : "-")
                     .append(" |\n");
         }
         return text.toString();
@@ -194,6 +209,7 @@ public final class EvalReport {
         metrics.put("cleanScheduled", cleanScheduled());
         metrics.put("triageFalsePositiveRate", triageFalsePositiveRate());
         metrics.put("endToEndRecall", endToEndRecall());
+        metrics.put("evidenceBackedRecall", evidenceBackedRate());
         metrics.put("findings", findings());
         metrics.put("kept", kept());
         metrics.put("downgraded", downgraded());
@@ -213,6 +229,7 @@ public final class EvalReport {
             row.put("dropped", outcome.dropped());
             row.put("invalidRetractions", outcome.invalidRetractions());
             row.put("lineMatched", outcome.lineMatched());
+            row.put("evidenceBacked", outcome.evidenceBacked());
             row.put("anchorLine", outcome.anchorLine());
         }
         try {
