@@ -104,7 +104,7 @@
 <body>
 
 <h1>代码审查智能体</h1>
-<p class="lead">输入仓库路径和两个提交，看它把哪些改动判为必查、挖到了什么证据、最后为什么只留下这几条评论。</p>
+<p class="lead">审查指定提交区间内的改动：分档、取证、复核，输出最终评论。</p>
 
 <form id="form">
   <div>
@@ -131,7 +131,7 @@
   <h2>分析单元</h2>
   <table>
     <thead>
-      <tr><th>文件</th><th>单元</th><th>档位</th><th>风险类别</th><th>结局</th><th>工具调用</th><th>结论</th></tr>
+      <tr><th>文件</th><th>单元</th><th>档位</th><th>风险类别</th><th>结局</th><th>工具调用</th><th>结论数</th></tr>
     </thead>
     <tbody id="units"></tbody>
   </table>
@@ -160,8 +160,8 @@ const modeHint = document.getElementById("modeHint");
 fetch("/api/mode").then((r) => r.json()).then((mode) => {
   const offline = (mode.models || "").includes("offline");
   modeHint.textContent = offline
-    ? "当前是离线假模型：流程真实，但结论文本是模板，用来演示「有没有被拦下」，不代表审查质量。"
-    : "当前是 " + mode.models + "：每次点按钮都会真的调用模型，会产生费用。";
+    ? "模型：离线替身。结果确定、可复现，不产生费用。"
+    : "模型：" + mode.models + "。每次执行都会调用模型并产生费用。";
 }).catch(() => {
   modeHint.textContent = "无法确认模型模式，仍可以直接审查。";
 });
@@ -205,10 +205,10 @@ function render(data) {
   const cards = document.getElementById("cards");
   cards.innerHTML = "";
   [
-    ["单元", data.units],
-    ["评论", data.comments],
-    ["断言", data.assertions],
-    ["疑问", data.questions],
+    ["单元", data.unitCount],
+    ["评论", data.commentCount],
+    ["需修改", data.assertions],
+    ["待确认", data.questions],
     ["被丢弃", data.dropped],
     ["耗时", data.durationMs + " ms"]
   ].forEach(([label, value]) => {
@@ -225,7 +225,7 @@ function render(data) {
   const units = document.getElementById("units");
   units.innerHTML = "";
   if (!data.unitOutcomes.length) {
-    units.innerHTML = '<tr><td colspan="7" class="empty">这个区间没有可审查的改动。</td></tr>';
+    units.innerHTML = '<tr><td colspan="7" class="empty">该区间没有可审查的改动。</td></tr>';
   }
   data.unitOutcomes.forEach((unit) => {
     const row = document.createElement("tr");
@@ -254,7 +254,7 @@ function render(data) {
   const comments = document.getElementById("comments");
   comments.innerHTML = "";
   if (!data.comments.length) {
-    comments.innerHTML = '<p class="empty">没有评论：要么没深挖，要么挖到的结论没通过证据校验。</p>';
+    comments.innerHTML = '<p class="empty">没有评论：没有单元被排期，或结论未通过证据校验。</p>';
   }
   data.comments.forEach((comment) => {
     const box = document.createElement("div");
