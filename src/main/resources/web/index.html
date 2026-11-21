@@ -1,296 +1,360 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>代码审查智能体 · 演示</title>
+<title>代码审查智能体</title>
 <style>
   :root {
-    color-scheme: light;
     --ink: #1f2328;
-    --muted: #656d76;
-    --line: #d8dee4;
-    --bg: #ffffff;
-    --soft: #f6f8fa;
-    --accent: #0969da;
-    --ok: #1a7f37;
-    --warn: #9a6700;
-    --bad: #cf222e;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --accent: #2563eb;
+    --assertion: #16a34a;
+    --question: #b45309;
+    --must: #dc2626;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0 auto;
-    max-width: 1040px;
-    padding: 32px 20px 64px;
-    font: 15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    margin: 0;
+    padding: 28px 20px 60px;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
     color: var(--ink);
     background: var(--bg);
+    font-size: 14px;
+    line-height: 1.6;
   }
-  h1 { font-size: 22px; margin: 0 0 6px; }
-  h2 { font-size: 15px; margin: 32px 0 10px; }
-  p.lead { color: var(--muted); margin: 0 0 24px; }
-  form {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr auto;
-    gap: 10px;
-    align-items: end;
-    padding: 16px;
-    background: var(--soft);
+  main { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 6px; }
+  h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+  .lead { color: var(--muted); margin: 0 0 18px; }
+  .panel {
+    background: var(--card);
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
   }
   label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-  input {
+  input[type=text], select, textarea {
     width: 100%;
-    padding: 8px 10px;
-    font: inherit;
-    font-size: 13px;
     border: 1px solid var(--line);
-    border-radius: 6px;
+    border-radius: 7px;
+    padding: 7px 9px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
     background: #fff;
   }
+  textarea { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; height: 210px; resize: vertical; }
+  .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .row > * { flex: 1 1 180px; }
+  .row > .tight { flex: 0 0 auto; }
   button {
-    padding: 9px 18px;
-    font: inherit;
+    border: 0;
+    border-radius: 7px;
+    padding: 8px 16px;
     font-size: 13px;
-    border: 1px solid var(--accent);
-    border-radius: 6px;
+    font-family: inherit;
     background: var(--accent);
     color: #fff;
     cursor: pointer;
   }
+  button.ghost { background: #eef1f5; color: var(--ink); }
   button:disabled { opacity: .55; cursor: default; }
-  .hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
-  .cards { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-  .card {
-    flex: 1 1 120px;
-    padding: 12px 14px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .commits { max-height: 300px; overflow: auto; margin: 0 -6px; }
+  .commit {
+    display: flex; gap: 8px; align-items: center;
+    padding: 6px; border-radius: 7px;
   }
-  .card b { display: block; font-size: 22px; font-weight: 600; }
-  .card span { font-size: 12px; color: var(--muted); }
+  .commit:hover { background: #f3f5f8; }
+  .commit.base { background: #eef4ff; }
+  .commit.head { background: #eefaf1; }
+  .commit .id { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); width: 62px; flex: 0 0 62px; }
+  .commit .msg { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .commit .pick { font-size: 11px; padding: 3px 8px; }
+  .cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
+  @media (max-width: 900px) { .cards { grid-template-columns: repeat(3, 1fr); } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .card .num { font-size: 22px; font-weight: 600; }
+  .card .cap { color: var(--muted); font-size: 12px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-weight: 600; color: var(--muted); font-size: 12px; }
-  .tier { font-size: 11px; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
-  .must { background: #ffebe9; color: var(--bad); }
-  .judge { background: #fff8c5; color: var(--warn); }
-  .skip { background: var(--soft); color: var(--muted); }
-  .comment {
-    padding: 12px 14px;
-    margin-bottom: 10px;
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--accent);
-    border-radius: 6px;
-  }
-  .comment.question { border-left-color: var(--warn); }
-  .comment header { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-  .comment code { font-size: 12px; color: var(--muted); }
-  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px; border-bottom: 1px solid #f0f2f5; vertical-align: top; }
+  .tier { font-size: 12px; padding: 1px 7px; border-radius: 999px; background: #fdecec; color: var(--must); }
+  .tier.JUDGE { background: #fdf3e3; color: var(--question); }
+  .tier.SKIP { background: #f0f1f3; color: var(--muted); }
+  .comment { border-left: 3px solid var(--accent); background: var(--card); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+  .comment .where { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .comment .body { white-space: pre-wrap; }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; margin-left: 8px; }
+  .tag.ASSERTION { background: #e9f7ee; color: var(--assertion); }
+  .tag.QUESTION { background: #fdf3e3; color: var(--question); }
+  .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
   .note { margin-top: 4px; font-size: 12px; color: var(--muted); }
-  .error {
-    margin-top: 16px;
-    padding: 10px 14px;
-    border: 1px solid #ffcecb;
-    border-radius: 6px;
-    background: #ffebe9;
-    color: var(--bad);
-    font-size: 13px;
-    white-space: pre-wrap;
-  }
-  [hidden] { display: none !important; }
+  .error { color: #b91c1c; font-size: 13px; }
+  code.path { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
 </style>
 </head>
 <body>
+<main>
+  <h1>代码审查智能体</h1>
+  <p class="lead">挑两个提交，看它把哪些改动判为必查、取证到了什么、最后为什么只留这几条评论。也可以直接改一段代码再提交，立刻审自己刚写的那次改动。</p>
 
-<h1>代码审查智能体</h1>
-<p class="lead">审查指定提交区间内的改动：分档、取证、复核，输出最终评论。</p>
+  <section class="panel">
+    <div class="row">
+      <div>
+        <label for="repository">仓库路径</label>
+        <input type="text" id="repository" spellcheck="false">
+      </div>
+      <div class="tight"><button class="ghost" id="reload">读取提交</button></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div>
+        <label for="base">起始提交</label>
+        <input type="text" id="base" spellcheck="false">
+      </div>
+      <div>
+        <label for="head">结束提交</label>
+        <input type="text" id="head" spellcheck="false">
+      </div>
+      <div class="tight"><button id="review">开始审查</button></div>
+    </div>
+    <div class="hint" id="modeHint">正在确认模型…</div>
+  </section>
 
-<form id="form">
-  <div>
-    <label for="repository">仓库路径</label>
-    <input id="repository" name="repository" value="">
+  <div class="grid">
+    <section class="panel">
+      <h2>提交历史（点「起点」「终点」挑选区间）</h2>
+      <div class="commits" id="commits"><div class="empty">读取中…</div></div>
+    </section>
+
+    <section class="panel">
+      <h2>改点代码，提交，然后审它</h2>
+      <label for="fileSelect">文件</label>
+      <select id="fileSelect"></select>
+      <label for="content" style="margin-top:10px">内容</label>
+      <textarea id="content" spellcheck="false"></textarea>
+      <label for="message" style="margin-top:10px">提交说明</label>
+      <input type="text" id="message" placeholder="例如：删掉空判，看看它说不说得出来">
+      <div class="row" style="margin-top:10px">
+        <div class="tight"><button id="commit">提交并审查</button></div>
+        <div class="tight"><button class="ghost" id="revert">放弃修改</button></div>
+      </div>
+      <div class="hint">提交会写进工作区那份演示仓库，别指向你自己的项目。</div>
+    </section>
   </div>
-  <div>
-    <label for="base">起始提交</label>
-    <input id="base" name="base" value="">
-  </div>
-  <div>
-    <label for="head">结束提交</label>
-    <input id="head" name="head" value="">
-  </div>
-  <div><button id="run" type="submit">开始审查</button></div>
-</form>
-<div class="hint" id="modeHint">正在确认模型…</div>
 
-<div id="error" class="error" hidden></div>
-
-<section id="result" hidden>
-  <div class="cards" id="cards"></div>
-
-  <h2>分析单元</h2>
-  <table>
-    <thead>
-      <tr><th>文件</th><th>单元</th><th>档位</th><th>风险类别</th><th>结局</th><th>工具调用</th><th>结论数</th></tr>
-    </thead>
-    <tbody id="units"></tbody>
-  </table>
-
-  <h2>评论</h2>
-  <div id="comments"></div>
-</section>
+  <section id="result" style="display:none">
+    <div class="cards" id="cards"></div>
+    <section class="panel">
+      <h2>分析单元</h2>
+      <div id="units"></div>
+    </section>
+    <section class="panel">
+      <h2>评论</h2>
+      <div id="comments"></div>
+    </section>
+  </section>
+</main>
 
 <script>
-const tierNames = { MUST_INVESTIGATE: "必查", JUDGE: "待判断", SKIP: "跳过" };
-const tierClass = { MUST_INVESTIGATE: "must", JUDGE: "judge", SKIP: "skip" };
-const outcomeNames = {
-  CONCLUDED: "出了结论",
-  TOOL_BUDGET_EXHAUSTED: "工具预算用尽",
-  TURN_BUDGET_EXHAUSTED: "回合用尽",
-  MAX_FINDINGS_REACHED: "结论数到顶",
-  STALLED: "几轮没有新信息",
-  MODEL_FAILED: "模型调用失败"
-};
-const categoryNames = {
-  SECURITY: "安全", CONCURRENCY: "并发", RESOURCE: "资源", CONSISTENCY: "一致性",
-  CONTRACT: "契约", LOGIC: "逻辑", DOCS: "文档"
-};
+const $ = (id) => document.getElementById(id);
+const repo = () => $("repository").value.trim();
+let currentFile = "";
 
-const modeHint = document.getElementById("modeHint");
-fetch("/api/defaults").then((r) => r.json()).then((d) => {
-  if (d.error) { return; }
-  document.getElementById("repository").value = d.repository;
-  document.getElementById("base").value = d.base;
-  document.getElementById("head").value = d.head;
-}).catch(() => {});
-fetch("/api/mode").then((r) => r.json()).then((mode) => {
-  const offline = (mode.models || "").includes("offline");
-  modeHint.textContent = offline
-    ? "模型：离线替身。结果确定、可复现，不产生费用。"
-    : "模型：" + mode.models + "。每次执行都会调用模型并产生费用。";
-}).catch(() => {
-  modeHint.textContent = "无法确认模型模式，仍可以直接审查。";
-});
+function api(path, options) {
+  return fetch(path, options).then(async (response) => {
+    const data = await response.json().catch(() => ({ error: "无法解析响应" }));
+    if (!response.ok) { throw new Error(data.error || ("HTTP " + response.status)); }
+    return data;
+  });
+}
 
-const form = document.getElementById("form");
-const runButton = document.getElementById("run");
-const errorBox = document.getElementById("error");
-const result = document.getElementById("result");
+function showError(message) {
+  const box = $("units");
+  $("result").style.display = "block";
+  $("cards").innerHTML = "";
+  box.innerHTML = `<div class="error">${message}</div>`;
+  $("comments").innerHTML = "";
+}
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  errorBox.hidden = true;
-  result.hidden = true;
-  runButton.disabled = true;
-  runButton.textContent = "审查中…";
-  try {
-    const response = await fetch("/api/review", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        repository: document.getElementById("repository").value,
-        base: document.getElementById("base").value,
-        head: document.getElementById("head").value
-      })
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || ("HTTP " + response.status));
-    }
-    render(data);
-  } catch (e) {
-    errorBox.textContent = e.message;
-    errorBox.hidden = false;
-  } finally {
-    runButton.disabled = false;
-    runButton.textContent = "开始审查";
+function card(value, caption) {
+  return `<div class="card"><div class="num">${value}</div><div class="cap">${caption}</div></div>`;
+}
+
+function loadMode() {
+  api("/api/mode").then((data) => {
+    $("modeHint").textContent = "模型：" + data.models + "。每次审查都会真的调用模型，会产生费用。";
+  }).catch(() => { $("modeHint").textContent = "模型信息读取失败。"; });
+}
+
+function loadDefaults() {
+  return api("/api/defaults").then((data) => {
+    if (data.error) { return; }
+    $("repository").value = data.repository;
+    $("base").value = data.base;
+    $("head").value = data.head;
+  }).catch(() => {});
+}
+
+function loadCommits() {
+  if (!repo()) { return Promise.resolve(); }
+  return api("/api/commits?repository=" + encodeURIComponent(repo()))
+    .then((data) => {
+      const box = $("commits");
+      if (!data.commits.length) { box.innerHTML = '<div class="empty">这个仓库还没有提交。</div>'; return; }
+      box.innerHTML = data.commits.map((commit) => {
+        const isBase = commit.id.startsWith($("base").value) || $("base").value === commit.id;
+        const isHead = commit.id.startsWith($("head").value) || $("head").value === commit.id;
+        const cls = isBase ? "base" : (isHead ? "head" : "");
+        return `<div class="commit ${cls}">
+          <span class="id">${commit.short}</span>
+          <span class="msg" title="${escapeHtml(commit.message)}">${escapeHtml(commit.message)}</span>
+          <button class="ghost pick" data-base="${commit.id}">起点</button>
+          <button class="ghost pick" data-head="${commit.id}">终点</button>
+        </div>`;
+      }).join("");
+      box.querySelectorAll("button[data-base]").forEach((button) => {
+        button.onclick = () => { $("base").value = button.dataset.base; loadCommits(); };
+      });
+      box.querySelectorAll("button[data-head]").forEach((button) => {
+        button.onclick = () => { $("head").value = button.dataset.head; loadCommits(); };
+      });
+    })
+    .catch((error) => { $("commits").innerHTML = `<div class="error">${error.message}</div>`; });
+}
+
+function loadFiles() {
+  if (!repo()) { return Promise.resolve(); }
+  return api("/api/files?repository=" + encodeURIComponent(repo()))
+    .then((data) => {
+      const select = $("fileSelect");
+      select.innerHTML = data.files.map((file) => `<option value="${file}">${file}</option>`).join("");
+      if (data.files.length) { openFile(data.files[0]); }
+    })
+    .catch((error) => { $("content").value = ""; $("content").placeholder = error.message; });
+}
+
+function openFile(path) {
+  currentFile = path;
+  return api("/api/file?repository=" + encodeURIComponent(repo()) + "&path=" + encodeURIComponent(path))
+    .then((data) => { $("content").value = data.content; })
+    .catch((error) => { $("content").value = ""; showError(error.message); });
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function review() {
+  if (!$("repository").value || !$("base").value || !$("head").value) {
+    showError("仓库路径、起始提交、结束提交都要填。");
+    return;
   }
-});
+  $("review").disabled = true;
+  $("review").textContent = "审查中…";
+  api("/api/review", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repository: $("repository").value.trim(), base: $("base").value.trim(), head: $("head").value.trim() })
+  }).then((data) => {
+    render(data);
+  }).catch((error) => {
+    showError(error.message);
+  }).finally(() => {
+    $("review").disabled = false;
+    $("review").textContent = "开始审查";
+  });
+}
 
 function render(data) {
-  const cards = document.getElementById("cards");
-  cards.innerHTML = "";
-  [
-    ["单元", data.unitCount],
-    ["评论", data.commentCount],
-    ["需修改", data.assertions],
-    ["待确认", data.questions],
-    ["被丢弃", data.dropped],
-    ["耗时", data.durationMs + " ms"]
-  ].forEach(([label, value]) => {
-    const card = document.createElement("div");
-    card.className = "card";
-    const number = document.createElement("b");
-    number.textContent = value;
-    const name = document.createElement("span");
-    name.textContent = label;
-    card.append(number, name);
-    cards.append(card);
-  });
+  $("result").style.display = "block";
+  $("cards").innerHTML = [
+    card(data.unitCount, "单元"),
+    card(data.commentCount, "评论"),
+    card(data.assertions, "需修改"),
+    card(data.questions, "待确认"),
+    card(data.dropped, "被丢弃"),
+    card(data.durationMs + " ms", "耗时")
+  ].join("");
 
-  const units = document.getElementById("units");
-  units.innerHTML = "";
   if (!data.unitOutcomes.length) {
-    units.innerHTML = '<tr><td colspan="7" class="empty">该区间没有可审查的改动。</td></tr>';
+    $("units").innerHTML = '<div class="empty">该区间没有可审查的改动。</div>';
+  } else {
+    const rows = data.unitOutcomes.map((unit) => {
+      const notes = (unit.abandoned || []).length
+        ? `<div class="note">未下结论：${escapeHtml(unit.abandoned.join("；"))}</div>` : "";
+      return `<tr>
+        <td><code class="path">${escapeHtml(unit.file)}</code></td>
+        <td>${escapeHtml(unit.unitKey)}</td>
+        <td><span class="tier ${unit.tier}">${tierLabel(unit.tier)}</span></td>
+        <td>${categoryLabel(unit.riskCategory)}</td>
+        <td>${outcomeLabel(unit.outcome)}${notes}</td>
+        <td>${unit.toolCalls}</td>
+        <td>${unit.findings}</td>
+      </tr>`;
+    }).join("");
+    $("units").innerHTML = `<table>
+      <thead><tr><th>文件</th><th>单元</th><th>档位</th><th>风险类别</th><th>结局</th><th>工具调用</th><th>结论数</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
   }
-  data.unitOutcomes.forEach((unit) => {
-    const row = document.createElement("tr");
-    const cell = (text) => {
-      const td = document.createElement("td");
-      td.textContent = text;
-      return td;
-    };
-    const tier = document.createElement("span");
-    tier.className = "tier " + (tierClass[unit.tier] || "skip");
-    tier.textContent = tierNames[unit.tier] || unit.tier;
-    const tierCell = document.createElement("td");
-    tierCell.append(tier);
-    row.append(
-      cell(unit.file),
-      cell(unit.unitKey),
-      tierCell,
-      cell(categoryNames[unit.riskCategory] || unit.riskCategory),
-      cell(outcomeNames[unit.outcome] || unit.outcome),
-      cell(String(unit.toolCalls)),
-      cell(String(unit.findings))
-    );
-    if (unit.abandoned && unit.abandoned.length) {
-      const note = document.createElement("div");
-      note.className = "note";
-      note.textContent = "未下结论：" + unit.abandoned.join("；");
-      const container = document.createElement("div");
-      container.append(note);
-      row.children[4].append(container);
-    }
-    units.append(row);
-  });
 
-  const comments = document.getElementById("comments");
-  comments.innerHTML = "";
   if (!data.comments.length) {
-    comments.innerHTML = '<p class="empty">没有评论：没有单元被排期，或结论未通过证据校验。</p>';
+    $("comments").innerHTML = '<div class="empty">没有评论：没有单元被排期，或者结论都没通过证据校验。</div>';
+  } else {
+    $("comments").innerHTML = data.comments.map((comment) => `
+      <article class="comment">
+        <div class="where">${escapeHtml(comment.file)}:${comment.line} · ${categoryLabel(comment.riskCategory)}
+          <span class="tag ${comment.status}">${comment.status === "ASSERTION" ? "需修改" : "待确认"}</span></div>
+        <div class="body">${escapeHtml(comment.body)}</div>
+        <div class="note">证据：${comment.evidence.length ? comment.evidence.join(", ") : "无（规则触发，未取得原文证据）"}</div>
+      </article>`).join("");
   }
-  data.comments.forEach((comment) => {
-    const box = document.createElement("div");
-    box.className = "comment" + (comment.status === "QUESTION" ? " question" : "");
-    const head = document.createElement("header");
-    head.textContent = comment.file + ":" + comment.line + " · "
-      + (categoryNames[comment.riskCategory] || comment.riskCategory) + " · "
-      + (comment.status === "QUESTION" ? "疑问" : "断言");
-    const body = document.createElement("div");
-    body.textContent = comment.body;
-    box.append(head, body);
-    if (comment.evidence?.length) {
-      const evidence = document.createElement("code");
-      evidence.textContent = "证据：" + comment.evidence.join("、");
-      box.append(evidence);
-    }
-    comments.append(box);
-  });
-
-  result.hidden = false;
 }
+
+const TIERS = { MUST_INVESTIGATE: "必查", JUDGE: "待判断", SKIP: "跳过" };
+const CATEGORIES = { SECURITY: "安全", CONCURRENCY: "并发", RESOURCE: "资源", CONSISTENCY: "一致性", CONTRACT: "契约", LOGIC: "逻辑", DOCS: "文档" };
+const OUTCOMES = {
+  CONCLUDED: "出了结论", TOOL_BUDGET_EXHAUSTED: "工具预算用尽", TURN_BUDGET_EXHAUSTED: "回合用尽",
+  MAX_FINDINGS_REACHED: "结论数到顶", STALLED: "无新信息", MODEL_FAILED: "模型调用失败"
+};
+const tierLabel = (value) => TIERS[value] || value;
+const categoryLabel = (value) => CATEGORIES[value] || value;
+const outcomeLabel = (value) => OUTCOMES[value] || value;
+
+$("review").onclick = review;
+$("reload").onclick = () => { loadCommits(); loadFiles(); };
+$("fileSelect").onchange = (event) => openFile(event.target.value);
+$("revert").onclick = () => { if (currentFile) { openFile(currentFile); } };
+$("commit").onclick = () => {
+  if (!currentFile) { showError("先选一个文件。"); return; }
+  const message = $("message").value.trim() || ("Edit " + currentFile);
+  const previousHead = $("head").value.trim();
+  $("commit").disabled = true;
+  api("/api/commit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repository: repo(), path: currentFile, content: $("content").value, message })
+  }).then((data) => {
+    $("base").value = previousHead;
+    $("head").value = data.commit;
+    $("message").value = "";
+    return loadCommits().then(review);
+  }).catch((error) => {
+    showError(error.message);
+  }).finally(() => {
+    $("commit").disabled = false;
+  });
+};
+
+loadMode();
+loadDefaults().then(() => { loadCommits(); loadFiles(); });
 </script>
 </body>
 </html>
