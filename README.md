@@ -52,7 +52,7 @@ strong counter-evidence retracts.
 - [x] Verify — evidence-backed refutation, keep / downgrade / retract
 - [x] Evaluation — 22 mutation cases, report written to `eval/latest-report.md`
 - [x] Pipeline — triage → investigate → verify → comments, one command
-- [x] 124 tests, no network required
+- [x] 134 tests, no network required
 - [x] LangChain4j model adapter — one class imports the SDK, everything else speaks prompts and JSON
 - [x] Cheap gate for the judge tier — a small, shapeless change never reaches the model
 - [x] Real-model numbers (`deepseek-chat`, 22 cases; see the Evaluation table)
@@ -124,6 +124,12 @@ API key. The table is written to `eval/latest-callers.md`.
   (something concrete is wrong here) or `confirm` (the author has to check something). A sentence
   that only restates the diff is not a conclusion, and the verifier rejects a conclusion with no
   demand at all; the prompt tells the model to abandon the question instead of filling the space.
+- **The answer shape is a schema, not a request.** The four replies the pipeline needs (triage
+  assessment, change summary, investigation turn, critic verdict) are forced through a tool call
+  whose JSON Schema is fixed in code, so a provider that honours tool choice cannot answer in the
+  wrong shape. DeepSeek rejects `json_schema` response formats, and `json_object` only promises
+  valid JSON, not the fields; a required tool call constrains both. The structured call also uses a
+  separate client instance, because asking for `json_object` and a tool call at once is rejected.
 - **Running the tests is deliberately out of scope.** Executing the changed code would break the
   read-only boundary, needs a build of the target repository, and invites flaky failures. The
   evidence gate stops fabricated citations, which is the failure that matters for a comment; a

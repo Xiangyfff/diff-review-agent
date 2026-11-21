@@ -53,7 +53,9 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
 
     @Override
     public ModelTurn next(InvestigationState state) {
-        String reply = ModelCall.ask(chat, SYSTEM, render(state) + "\n\n" + SHAPE);
+        String reply = ModelCall.ask(chat, SYSTEM, render(state) + "\n\n" + SHAPE,
+                "emit_turn", "调查单元时的下一步动作：调工具、放弃并说明理由，或下一条带证据的结论",
+                Schemas.INVESTIGATION_TURN);
         return turnFrom(JsonReplies.object(reply));
     }
 
