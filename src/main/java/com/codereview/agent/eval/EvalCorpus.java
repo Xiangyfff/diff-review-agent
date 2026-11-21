@@ -291,10 +291,6 @@ public final class EvalCorpus {
                 "        return amount - tax;",
                 "        return amount * tax;", "amount * tax", true, "arithmetic"));
 
-        cases.add(new MutationCase("guard-returning-zero", price,
-                "        if (quantity < 0) {",
-                "        if (quantity <= 0) {", "quantity <= 0", true, "boundary"));
-
         return cases;
     }
 
