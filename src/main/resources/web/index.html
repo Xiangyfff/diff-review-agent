@@ -29,6 +29,15 @@
   main { max-width: 1180px; margin: 0 auto; }
   h1 { font-size: 21px; margin: 0 0 6px; }
   h2 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+  details.fold { margin-bottom: 16px; }
+  details.fold > summary {
+    font-size: 14px; color: var(--muted); font-weight: 600; cursor: pointer;
+    margin-bottom: 10px; list-style: none; user-select: none;
+  }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary::before { content: "▸ "; }
+  details.fold[open] > summary::before { content: "▾ "; }
+  details.fold[open] > summary { margin-bottom: 10px; }
   .lead { color: var(--muted); margin: 0 0 18px; }
   .panel {
     background: var(--card);
@@ -165,8 +174,10 @@
   <section id="result" style="display:none">
     <div class="cards" id="cards"></div>
     <section class="panel">
-      <h2>分析单元</h2>
-      <div id="units"></div>
+      <details class="fold" id="unitsFold">
+        <summary>分析单元<span id="unitsCount" class="note"></span></summary>
+        <div id="units"></div>
+      </details>
     </section>
     <section class="panel">
       <h2>被筛除的文件（这里可以把它强行拉回审查）</h2>
@@ -373,6 +384,8 @@ function render(data) {
 
   renderScreened(data.screenedOut || []);
   renderSampling(data.sampling);
+
+  $("unitsCount").textContent = data.unitOutcomes.length ? `（${data.unitOutcomes.length}）` : "";
 
   if (!data.unitOutcomes.length) {
     $("units").innerHTML = '<div class="empty">该区间没有可审查的改动。</div>';
