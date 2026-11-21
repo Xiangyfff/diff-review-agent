@@ -87,22 +87,22 @@ Real model (`deepseek-chat`, temperature 0), latest run:
 
 | metric | value |
 |---|---|
-| triage unit recall | 81% (13/16) |
-| triage false positive rate | 0% (0/6) |
-| rule-gated recall (MUST, no model involved) | 81% (13/16) |
-| rule-gated false positives (MUST on clean changes) | 0% (0/6) |
-| end-to-end recall | 63% (10/16) |
-| findings | 13 |
-| kept / downgraded / dropped | 13 / 0 / 0 |
+| triage unit recall | 88% (14/16) |
+| triage false positive rate | 17% (1/6) |
+| rule-gated recall (MUST, no model involved) | 88% (14/16) |
+| rule-gated false positives (MUST on clean changes) | 17% (1/6) |
+| end-to-end recall | 69% (11/16) |
+| findings | 14 |
+| kept / downgraded / dropped | 14 / 0 / 0 |
 
 Offline stand-ins, same corpus:
 
 | metric | value |
 |---|---|
-| triage unit recall | 88% (14/16) |
-| triage false positive rate | 17% (1/6) |
-| end-to-end recall | 69% (11/16) |
-| kept / downgraded / dropped | 14 / 0 / 1 |
+| triage unit recall | 94% (15/16) |
+| triage false positive rate | 33% (2/6) |
+| end-to-end recall | 75% (12/16) |
+| kept / downgraded / dropped | 16 / 0 / 1 |
 
 Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
 every structural change, and the verifier stand-in retracts as soon as it reads a null check anywhere
@@ -112,10 +112,12 @@ runs.
 
 Two semantic cases were added next, where no shape signals the bug. Logging the password in
 `AuthService.login` is caught, because the auth path is already flagged by rule; it took the model reading
-the line to say what was wrong with it. Moving `validate(order)` after `repository.save(order)` is not
-caught at all: two statements swap places, no rule fires, and the cheap gate drops the unit as a small
-shapeless change. That is the gate's price, and the honest conclusion is that a pure reordering is never
-a no-op — side effects have an order — so the gate should not swallow it.
+the line to say what was wrong with it. Moving `validate(order)` after `repository.save(order)` was not caught at
+all at first: two statements swapped places, no rule fired, and the cheap gate dropped the unit as a small
+shapeless change. A reorder is never a no-op — side effects have an order — so the statement multiset is
+now compared before the diff runs and a pure reorder is a mandatory shape. That cost one false positive at
+triage (the clean case swapping two list additions is investigated and comes back with no finding, so it
+pays model calls and produces no comment) and bought the ordering defect back.
 
 Two of the new cases were added precisely because the first expanded run missed them, and each
 exposed a real gap. A boundary bug (`> 10` becoming `>= 10`) changed no shape the detector knew, so
