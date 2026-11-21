@@ -27,6 +27,25 @@ class BodyDeltaTest {
     }
 
     @Test
+    void aPureReorderIsItsOwnShape() {
+        List<StructuralChange> changes = compare(
+                "void m(Order o) { validate(o); save(o); }",
+                "void m(Order o) { save(o); validate(o); }");
+
+        assertThat(kinds(changes)).containsExactly(StructuralChange.Kind.STATEMENTS_REORDERED);
+        assertThat(changes.get(0).confidence()).isEqualTo(StructuralChange.Confidence.EXACT);
+    }
+
+    @Test
+    void replacingAStatementIsNotAReorder() {
+        List<StructuralChange> changes = compare(
+                "void m(Order o) { validate(o); save(o); }",
+                "void m(Order o) { check(o); save(o); }");
+
+        assertThat(kinds(changes)).doesNotContain(StructuralChange.Kind.STATEMENTS_REORDERED);
+    }
+
+    @Test
     void aChangedComparisonOperatorIsItsOwnShape() {
         List<StructuralChange> changes = compare(
                 "void m(int quantity) { boolean bulk = quantity > 10; use(bulk); }",

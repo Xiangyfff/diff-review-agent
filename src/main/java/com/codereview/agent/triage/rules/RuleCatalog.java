@@ -63,6 +63,10 @@ public final class RuleCatalog {
                 context -> context.has(StructuralChange.Kind.CONDITION_INVERTED)
                         || context.has(StructuralChange.Kind.EARLY_EXIT_REMOVED)));
 
+        defaults.add(new Rule("REORDERED-STATEMENTS", RiskCategory.LOGIC, true,
+                "the same statements moved; side effects now happen in a different order",
+                context -> context.has(StructuralChange.Kind.STATEMENTS_REORDERED)));
+
         defaults.add(new Rule("OPERATOR-CHANGED", RiskCategory.LOGIC, true,
                 "a comparison or arithmetic operator changed, which is where boundary bugs live",
                 context -> context.has(StructuralChange.Kind.OPERATOR_CHANGED)));
