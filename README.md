@@ -52,7 +52,7 @@ strong counter-evidence retracts.
 - [x] Verify — evidence-backed refutation, keep / downgrade / retract
 - [x] Evaluation — 22 mutation cases, report written to `eval/latest-report.md`
 - [x] Pipeline — triage → investigate → verify → comments, one command
-- [x] 134 tests, no network required
+- [x] 146 tests, no network required
 - [x] LangChain4j model adapter — one class imports the SDK, everything else speaks prompts and JSON
 - [x] Cheap gate for the judge tier — a small, shapeless change never reaches the model
 - [x] Real-model numbers (`deepseek-chat`, 22 cases; see the Evaluation table)
@@ -60,6 +60,8 @@ strong counter-evidence retracts.
 - [x] Token ledger — every run reports calls and tokens instead of assuming the cost
 - [x] Demo page — browse commits, review an edit made in the page, pick a depth, pull a screened file back in
 - [x] Pull-request publishing — dry run by default, inline comments filtered to the diff
+- [x] Sampling — a deterministic slice of the units the gate skipped, reported per run and in the demo
+- [x] Static analysis as a second fact source, limited to warnings on the added lines
 - [ ] Split a unit that is too large at method boundaries
 
 ## Knowing when "nobody calls it" is not the answer
@@ -130,6 +132,21 @@ API key. The table is written to `eval/latest-callers.md`.
   wrong shape. DeepSeek rejects `json_schema` response formats, and `json_object` only promises
   valid JSON, not the fields; a required tool call constrains both. The structured call also uses a
   separate client instance, because asking for `json_object` and a tool call at once is rejected.
+- **The units the gate skipped are sampled, not trusted.** A review tool that says "nothing here"
+  cannot be checked by reading its comments, because the interesting cases are the ones it never
+  wrote. Setting a sample rate (5% is a reasonable default, 0 is off) sends a deterministic slice of
+  the skipped units through the same investigation and the same evidence gate, and the run reports
+  how many of them produced an evidence-backed conclusion. The slice is chosen from a hash of the
+  unit key, so re-running the same commit samples the same units and the estimate is comparable
+  between runs. It measures "of the units we let through, how many had something to say" — not the
+  true miss rate, which needs a corpus with known answers.
+- **Static analysis only speaks about the new lines.** A type-level defect (a string compared with
+  `==`, a caught `Throwable`, a stack trace printed to production) is invisible to structural
+  comparison, so it is a second fact source for triage. It runs on the head version and keeps only
+  warnings that land on the added lines: without that filter every review drowns in warnings the
+  author did not cause. The string check fires only when one side is a literal, which trades recall
+  for precision on purpose — flagging every `==` between two variables would report arithmetic
+  comparisons on every file.
 - **Running the tests is deliberately out of scope.** Executing the changed code would break the
   read-only boundary, needs a build of the target repository, and invites flaky failures. The
   evidence gate stops fabricated citations, which is the failure that matters for a comment; a

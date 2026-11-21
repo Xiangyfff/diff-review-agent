@@ -47,9 +47,16 @@ public final class ReviewPipeline {
     private final InvestigationModel investigationModel;
     private final Verifier verifier;
     private final InvestigateConfig investigateConfig;
+    private Sampling sampling = Sampling.OFF;
     private final VerifyConfig verifyConfig;
     private final ModelFactory models;
     private final String modelDescription;
+
+    /** Mutable on purpose: the demo sets it once before running and nothing else touches it. */
+    public ReviewPipeline sampling(Sampling sampling) {
+        this.sampling = sampling == null ? Sampling.OFF : sampling;
+        return this;
+    }
 
     public ReviewPipeline(TriageService triage, InvestigationModel investigationModel,
             Verifier verifier, InvestigateConfig investigateConfig, VerifyConfig verifyConfig) {
@@ -111,26 +118,25 @@ public final class ReviewPipeline {
     public ReviewReport run(Path repository, String baseRevision, String headRevision, Depth depth,
             List<String> includePaths) throws IOException {
         TriagePlan plan = triage.including(includePaths).triage(repository, baseRevision, headRevision);
+        List<PlannedUnit> scheduled = plan.scheduled();
+        // Sampling needs the tools, so a triage-only run measures nothing here and says so.
+        List<PlannedUnit> sampled = depth == Depth.TRIAGE_ONLY
+                ? List.of() : sampling.pick(plan.units(), scheduled);
 
         List<UnitOutcome> outcomes = new ArrayList<>();
         List<Comment> comments = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
-        int findings = 0;
-        int dropped = 0;
-        int invalidRetractions = 0;
-        int verified = 0;
-        int downgraded = 0;
-        int merged = 0;
+        Tally tally = new Tally();
 
         if (depth == Depth.TRIAGE_ONLY) {
             // The baseline a reviewer without any tools would give: every question triage raised is
             // published as-is. Nothing is read, so nothing can be checked.
-            for (PlannedUnit unit : plan.scheduled()) {
+            for (PlannedUnit unit : scheduled) {
                 for (FindingQuestion question : unit.questions()) {
                     String key = unit.unit().file() + "|" + unit.unit().startLine() + "|"
                             + question.text();
                     if (!seen.add(key)) {
-                        merged++;
+                        tally.merged++;
                         continue;
                     }
                     comments.add(new Comment(unit.unit().file(), unit.unit().startLine(),
@@ -141,9 +147,7 @@ public final class ReviewPipeline {
                         unit.tier().name(), unit.category().name(), "TRIAGE_ONLY", 0, 0, 0,
                         List.of()));
             }
-            return new ReviewReport(baseRevision, headRevision, plan.stats(), outcomes, comments,
-                    findings, dropped, invalidRetractions, merged, plan.screenedOut(), verified,
-                    downgraded);
+            return report(plan, outcomes, comments, tally, Sampling.Summary.none());
         }
 
         // The index is rebuilt here instead of being handed over by triage: triage owns its own
@@ -158,60 +162,103 @@ public final class ReviewPipeline {
         VerifierRunner verifierRunner = depth == Depth.FULL
                 ? new VerifierRunner(verifier, toolbox, verifyConfig) : null;
 
-        for (PlannedUnit unit : plan.scheduled()) {
-            InvestigationResult result = investigator.investigate(taskOf(unit));
-            findings += result.findings().size();
-            int verifyCalls = 0;
-            for (Finding finding : result.findings()) {
-                VerifyResult verdict;
-                if (verifierRunner == null) {
-                    verdict = VerifyResult.of(finding, new Verdict.Keep("没有开启复核阶段"), 0);
-                } else {
-                    List<Evidence> cited = result.evidence().stream()
-                            .filter(evidence -> finding.evidenceIds().contains(evidence.id()))
-                            .toList();
-                    verdict = verifierRunner.review(new VerificationRequest(finding, cited,
-                            unit.unit().textBefore(), unit.unit().textAfter(), result.attempts()));
-                    verifyCalls += verdict.toolCalls();
-                    verified++;
-                    if (verdict.disposition() == VerifyResult.Disposition.QUESTION) {
-                        downgraded++;
-                    }
-                }
-                if (verdict.invalid()) {
-                    invalidRetractions++;
-                }
-                if (verdict.disposition() == VerifyResult.Disposition.DROPPED) {
-                    dropped++;
-                    continue;
-                }
-                // Two questions may end in the same statement at the same line. One comment per
-                // place and claim, otherwise the report repeats itself and the counts inflate.
-                String key = finding.file() + "|" + finding.line() + "|" + finding.statement();
-                if (!seen.add(key)) {
-                    merged++;
-                    continue;
-                }
-                comments.add(new Comment(finding.file(), finding.line(),
-                        unit.category().name(), statusOf(verdict), finding.statement(),
-                        finding.evidenceIds()));
-            }
-            // A unit the rules insist on investigating must not end up silent just because the
-            // model gave up. Turn that outcome into a question the author can answer, and say
-            // plainly that the evidence never arrived.
-            if (result.findings().isEmpty() && unit.tier() == Tier.MUST_INVESTIGATE) {
-                comments.add(unverified(unit));
-            }
-            List<String> abandonReasons = result.abandoned().stream()
-                    .map(abandoned -> abandoned.question() + " -> " + abandoned.reason())
-                    .toList();
-            outcomes.add(new UnitOutcome(unit.unit().file(), unit.unit().key(),
-                    unit.tier().name(), unit.category().name(), result.outcome().name(),
-                    result.toolCalls(), result.findings().size(), verifyCalls, abandonReasons));
+        for (PlannedUnit unit : scheduled) {
+            outcomes.add(investigateAndComment(unit, unit.questions(), investigator, verifierRunner,
+                    false, seen, comments, tally));
         }
-        return new ReviewReport(baseRevision, headRevision, plan.stats(), outcomes, comments,
-                findings, dropped, invalidRetractions, merged, plan.screenedOut(), verified,
-                downgraded);
+
+        int sampledWithFindings = 0;
+        for (PlannedUnit unit : sampled) {
+            UnitOutcome outcome = investigateAndComment(unit, sampleQuestions(unit), investigator,
+                    verifierRunner, true, seen, comments, tally);
+            outcomes.add(outcome);
+            if (outcome.findings() > 0) {
+                sampledWithFindings++;
+            }
+        }
+
+        Sampling.Summary summary = new Sampling.Summary(sampling.rate(), sampling.seed(),
+                plan.units().size() - scheduled.size(), sampled.size(), sampledWithFindings);
+        return report(plan, outcomes, comments, tally, summary);
+    }
+
+    /**
+     * One unit, from task to comment. Shared by the scheduled units and the sampled ones so the two
+     * cannot drift into different verdict handling.
+     */
+    private UnitOutcome investigateAndComment(PlannedUnit unit, List<FindingQuestion> questions,
+            InvestigationRunner investigator, VerifierRunner verifierRunner, boolean sampled,
+            java.util.Set<String> seen, List<Comment> comments, Tally tally) {
+        InvestigationResult result = investigator.investigate(taskOf(unit, questions));
+        tally.findings += result.findings().size();
+        int verifyCalls = 0;
+        for (Finding finding : result.findings()) {
+            VerifyResult verdict;
+            if (verifierRunner == null) {
+                verdict = VerifyResult.of(finding, new Verdict.Keep("没有开启复核阶段"), 0);
+            } else {
+                List<Evidence> cited = result.evidence().stream()
+                        .filter(evidence -> finding.evidenceIds().contains(evidence.id()))
+                        .toList();
+                verdict = verifierRunner.review(new VerificationRequest(finding, cited,
+                        unit.unit().textBefore(), unit.unit().textAfter(), result.attempts()));
+                verifyCalls += verdict.toolCalls();
+                tally.verified++;
+                if (verdict.disposition() == VerifyResult.Disposition.QUESTION) {
+                    tally.downgraded++;
+                }
+            }
+            if (verdict.invalid()) {
+                tally.invalidRetractions++;
+            }
+            if (verdict.disposition() == VerifyResult.Disposition.DROPPED) {
+                tally.dropped++;
+                continue;
+            }
+            // Two questions may end in the same statement at the same line. One comment per place
+            // and claim, otherwise the report repeats itself and the counts inflate.
+            String key = finding.file() + "|" + finding.line() + "|" + finding.statement();
+            if (!seen.add(key)) {
+                tally.merged++;
+                continue;
+            }
+            comments.add(new Comment(finding.file(), finding.line(),
+                    unit.category().name(), statusOf(verdict), finding.statement(),
+                    finding.evidenceIds()));
+        }
+        // A unit the rules insist on investigating must not end up silent just because the model
+        // gave up. Turn that outcome into a question the author can answer, and say plainly that
+        // the evidence never arrived.
+        if (result.findings().isEmpty() && unit.tier() == Tier.MUST_INVESTIGATE) {
+            comments.add(unverified(unit));
+        }
+        List<String> abandonReasons = result.abandoned().stream()
+                .map(abandoned -> abandoned.question() + " -> " + abandoned.reason())
+                .toList();
+        return new UnitOutcome(unit.unit().file(), unit.unit().key(), unit.tier().name(),
+                unit.category().name(), result.outcome().name(), result.toolCalls(),
+                result.findings().size(), verifyCalls, abandonReasons, sampled);
+    }
+
+    private ReviewReport report(TriagePlan plan, List<UnitOutcome> outcomes, List<Comment> comments,
+            Tally tally, Sampling.Summary summary) {
+        return new ReviewReport(plan.baseRevision(), plan.headRevision(), plan.stats(), outcomes,
+                comments, tally.findings, tally.dropped, tally.invalidRetractions, tally.merged,
+                plan.screenedOut(), tally.verified, tally.downgraded, summary);
+    }
+
+    private static List<FindingQuestion> sampleQuestions(PlannedUnit unit) {
+        return List.of(new FindingQuestion(unit.unit().name(),
+                "抽查：这次改动是否存在作者需要确认的问题？先读改动附近的代码，读不到证据就放弃。"));
+    }
+
+    private static final class Tally {
+        private int findings;
+        private int dropped;
+        private int invalidRetractions;
+        private int merged;
+        private int verified;
+        private int downgraded;
     }
 
     public static void main(String[] args) throws Exception {
@@ -265,7 +312,7 @@ public final class ReviewPipeline {
         return open ? Comment.Status.QUESTION : Comment.Status.ASSERTION;
     }
 
-    private static InvestigationTask taskOf(PlannedUnit unit) {
+    private static InvestigationTask taskOf(PlannedUnit unit, List<FindingQuestion> questions) {
         return new InvestigationTask(
                 unit.unit().key(),
                 unit.unit().file(),
@@ -273,7 +320,7 @@ public final class ReviewPipeline {
                 unit.unit().textBefore(),
                 unit.unit().textAfter(),
                 unit.changes().stream().map(change -> change.describe()).toList(),
-                unit.questions().stream().map(question -> question.text()).toList(),
+                questions.stream().map(question -> question.text()).toList(),
                 unit.facts());
     }
 }
