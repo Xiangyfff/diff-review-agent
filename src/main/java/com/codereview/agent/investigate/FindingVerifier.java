@@ -43,6 +43,10 @@ public final class FindingVerifier {
         if (finding.statement() == null || finding.statement().isBlank()) {
             return Validation.rejected("empty statement");
         }
+        if (!Finding.FIX.equals(finding.demand()) && !Finding.CONFIRM.equals(finding.demand())) {
+            return Validation.rejected("demand must be \"fix\" or \"confirm\", not \""
+                    + finding.demand() + "\"");
+        }
         if (finding.statement().length() > MAX_STATEMENT) {
             return Validation.rejected("statement longer than " + MAX_STATEMENT + " characters");
         }
