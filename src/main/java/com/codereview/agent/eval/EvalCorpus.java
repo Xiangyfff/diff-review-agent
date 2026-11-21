@@ -144,7 +144,20 @@ public final class EvalCorpus {
                 new MutationCase("case-insensitive-password", auth,
                         "        return user.equals(password);",
                         "        return user.equalsIgnoreCase(password);",
-                        "equalsIgnoreCase", true, "security"));
+                        "equalsIgnoreCase", true, "security"),
+
+                new MutationCase("password-logged", auth,
+                        join("    public boolean login(String user, String password) {",
+                                "        return check(user, password);"),
+                        join("    public boolean login(String user, String password) {",
+                                "        System.out.println(\"login attempt \" + user + \" / \" + password);",
+                                "        return check(user, password);"),
+                        "System.out.println(\"login attempt ", true, "semantic-pii"),
+
+                new MutationCase("validation-after-use", service,
+                        join("        validate(order);", "        repository.save(order);"),
+                        join("        repository.save(order);", "        validate(order);"),
+                        join("repository.save(order);", "        validate(order);"), true, "semantic-order"));
     }
 
     private static String join(String... lines) {
