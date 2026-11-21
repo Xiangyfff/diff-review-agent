@@ -62,6 +62,29 @@ strong counter-evidence retracts.
 - [x] Pull-request publishing — dry run by default, inline comments filtered to the diff
 - [ ] Split a unit that is too large at method boundaries
 
+## Calling the code, not the name
+
+`find_references` answers "which files mention this name", which is cheap and sometimes wrong:
+two classes with a `save` method, an overload, an interface with one implementation. `find_callers`
+resolves types instead and answers "which call sites actually reach this declaration". It is slower,
+so it exists only for the question that needs the accuracy.
+
+The difference is measurable without a model, so it is measured. On spring-petclinic, over the first
+87 methods of `src/main/java`:
+
+| | count |
+| --- | --- |
+| file mentions reported by the name index | 267 |
+| call sites resolved by the call graph | 181 |
+| mentions that belong to a method nobody calls | 99 |
+
+The `name-only` column is where the two disagree in the dangerous direction. `NamedEntity.toString`
+is mentioned in eight files and called by none of them — every one of those calls lands on a
+different `toString`. A reviewer told "eight callers" would go looking for eight places to change.
+
+Reproduce with `com.codereview.agent.eval.CallerComparison <repository> <output.md>`; it needs no
+API key. The table is written to `eval/latest-callers.md`.
+
 ## Design notes
 
 - **Evidence is checked, not requested.** A finding must cite evidence ids that resolve in the

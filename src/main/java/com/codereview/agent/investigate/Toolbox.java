@@ -1,5 +1,6 @@
 package com.codereview.agent.investigate;
 
+import com.codereview.agent.investigate.tool.FindCallersTool;
 import com.codereview.agent.investigate.tool.FindDefinitionTool;
 import com.codereview.agent.investigate.tool.FindReferencesTool;
 import com.codereview.agent.investigate.tool.HistoryTool;
@@ -34,6 +35,7 @@ public final class Toolbox {
     public static Toolbox standard(RepoAccess repository) {
         return new Toolbox(List.of(
                 cached(new ReadLinesTool(repository)),
+                cached(new FindCallersTool(repository)),
                 cached(new FindDefinitionTool(repository)),
                 cached(new FindReferencesTool(repository)),
                 cached(new SearchTool(repository)),
