@@ -1,323 +1,179 @@
 # diff-review-agent
 
-A code review agent that reads a git diff, decides which hunks are worth investigating, and only
-leaves a comment when it can point at the evidence it found.
+一个读懂 git diff 的代码审查智能体：它自己决定哪些改动值得深挖，只调只读工具取证，并且只有在能指出证据时才留下评论。
 
-Review bots usually fail in three ways: they comment before reading the surrounding code, they never
-leave the diff to look at the caller, and nobody can say afterwards whether their comments were
-right. This project is built around those three failures.
+审查机器人通常有三种失败：没读上下文就评论，从不离开 diff 去看调用方，以及事后没人能判断它的评论对不对。这个项目就是围绕这三种失败搭起来的。
 
-## 中文简介
+## 为什么不是又一个「把 diff 丢给模型」
 
-代码审查智能体常见的三个毛病是：没看上下文就评论、只看改动不看调用方、评论完没人能判断对不对。这个项目围绕这三件事设计。
+初审把改动切成以函数为单位的分析单元，比较前后两版语法树，只关心形状真的发生了变化的地方。原本有一句判空、改完之后没有了，这和「代码里现在没有判空」是两件完全不同的事，现成的静态工具分不出这个差别，因为它们的仓库里压根没有「变化」这个概念。
 
-输入一次提交的差异，先做初审：把改动切成以函数为单位的分析单元，比较前后两版语法树，找出形状确实发生变化的地方——比如原本有一句判空、改完之后没有了，这和「代码里现在没有判空」是两件完全不同的事，现成的静态工具分不出来。再用一小组规则决定哪些单元必须查、哪些可以跳过。值得查的单元会拿到几个具体的待验证问题，留给下一段深挖逐个回答。初审只输出一份可以序列化的调查计划，不产生任何评论。
+值得查的单元会拿到几个具体的待验证问题，交给下一段深挖逐个回答。初审只输出一份可以序列化的调查计划，不产生任何评论。
 
-深挖阶段把每个待查单元变成一场有预算的调查：模型每一轮只能在三个动作里选一个——调用一个只读工具、放弃并说明理由、或者在引用证据的前提下下结论。工具的返回全部进入一个带编号的证据库，结论只能引用真实拿到过的编号；编号对不上、引用的行不在证据范围内、讨论的符号没在证据原文里出现过，这三种情况都会被程序挡掉。
+深挖把每个单元变成一场有预算的调查：模型每轮只能在三个动作里选一个——调一个只读工具、放弃并说明理由、或者在引用证据的前提下下结论。工具返回全部进入带编号的证据库，结论只能引用真实拿到过的编号；编号对不上、引用的行不在证据覆盖范围内、讨论的符号没在证据原文里出现过，这三种都会被程序挡掉。
 
-复核阶段专门反驳：给它的任务不是「你觉得对吗」，而是「找出一个让这条结论不成立的具体事实，并且用工具读出来」。反驳同样必须引用本轮自己收集到的证据，拿不出证据就不算反驳——否则复核会靠感觉否掉真问题。
+复核专门负责反驳，给它的任务不是「你觉得对吗」，而是「找出一个让这条结论不成立的具体事实，并用工具读出来」。反驳同样要引用本轮自己收集的证据，拿不出证据就不算反驳，否则复核会靠感觉否掉真问题。
 
-评估用变异体做标准答案：在五个文件上注入十六个改动，十一个有明确缺陷，五个是等价重构，然后量三件事——单元级召回、干净改动被误排的比例、以及最终评论有没有落在缺陷那一行附近。
-
-当前进度：三段式全部落地，七十八个测试，全程离线可跑，也已经在真实仓库（spring-petclinic 的四个提交）上跑通过。模型层目前还是假模型，LangChain4j 适配器是下一步。技术栈是 Java 21、JGit、JavaParser、Jackson。
-
-## How it works
+## 工作流程
 
 ```
-diff ──> triage ──> investigate ──> verify ──> comments
+diff ──> 初审 ──> 深挖 ──> 复核 ──> 评论
 ```
 
-**Triage** parses the patch, cuts the changes into function-sized units, compares the before and
-after syntax tree of each unit, and runs a small rule catalogue over the *changes themselves* — a
-null check that disappeared is a different event from one that was never there. Rules that demand
-attention produce concrete questions the unit has to answer before it may be commented on. Units
-that do not earn a question are dropped; units that do are scheduled under a budget.
+**初审**解析补丁，把改动切成以函数为单位的分析单元，逐单元比较前后两版语法树，再拿一小组规则扫「变化本身」，最后分三档：必须查、待判断、跳过。判为必查的单元必须拿到具体问题才允许进入下一段，待判断档由模型决定值不值得查，跳过档连模型都不调。
 
-**Investigate** takes only the scheduled units and runs a bounded loop over five read-only tools. Its
-only three allowed moves are: call a tool, abandon a question with a reason, or conclude while citing
-evidence ids. Tool output never enters the conversation as free text — it goes into an evidence store
-and comes back as an id plus a summary, so a conclusion can point at it but cannot rewrite it.
+**深挖**只处理排期进来的单元，在一段有硬上限的循环里使用五个只读工具。工具的输出不会以自由文本形式进入对话，而是进证据库、以编号加摘要的形式回到提示词里，所以结论可以指向它，但不能改写它。
 
-**Verify** is a critic that must refute, not agree. A refutation has to cite evidence the critic read
-itself in this round; a refutation without evidence is counted and the finding stands. Survivors are
-kept as assertions, ones that cannot be proven either way are downgraded to questions, and only
-strong counter-evidence retracts.
+**复核**是一轮对称的取证：反驳者带着自己四次工具预算和全新的证据库，读到反证才能撤销，读到部分反证就降级成疑问句，什么都读不到则维持原结论。
 
-## Status
+## 当前状态
 
-- [x] Triage — patch parsing, unit mapping, structural change detection, rule catalogue, tiering,
-      question validation, name-level repo index, budgeted plan, deterministic offline model
-- [x] Investigate — five read-only tools, question queue, evidence store, five mechanical checks,
-      six counted outcomes
-- [x] Verify — evidence-backed refutation, keep / downgrade / retract
-- [x] Evaluation — 22 mutation cases, report written to `eval/latest-report.md`
-- [x] Pipeline — triage → investigate → verify → comments, one command
-- [x] 150 tests, no network required
-- [x] LangChain4j model adapter — one class imports the SDK, everything else speaks prompts and JSON
-- [x] Cheap gate for the judge tier — a small, shapeless change never reaches the model
-- [x] Real-model numbers (`deepseek-chat`, 22 cases; see the Evaluation table)
-- [x] Ablation across the three depths, written to `eval/latest-ablation.md`
-- [x] Token ledger — every run reports calls and tokens instead of assuming the cost
-- [x] Demo page — browse commits, review an edit made in the page, pick a depth, pull a screened file back in
-- [x] Pull-request publishing — dry run by default, inline comments filtered to the diff
-- [x] Sampling — a deterministic slice of the units the gate skipped, reported per run and in the demo
-- [x] Static analysis as a second fact source, limited to warnings on the added lines
-- [ ] Split a unit that is too large at method boundaries
+- [x] 初审：补丁解析、单元映射、结构变化检测、规则目录、分档、问题校验、名字级仓库索引、预算内的调查计划、离线确定性模型
+- [x] 深挖：五个只读工具、问题队列、证据库、五条机械校验、六种结局分别计数
+- [x] 复核：带证据的反驳，维持 / 降级 / 撤销
+- [x] 评估：变异体语料，报告写到 `eval/latest-report.md`
+- [x] 流水线：初审 → 深挖 → 复核 → 评论，一条命令
+- [x] 150 个测试，全程不联网
+- [x] LangChain4j 适配器：全项目只有一个类 import 这个 SDK，其余部分只说提示词和 JSON
+- [x] 便宜闸门：小而无形状的改动根本走不到模型
+- [x] 真模型数字（`deepseek-chat`，见评估一节）
+- [x] 三档深度的消融，写到 `eval/latest-ablation.md`
+- [x] 词元账本：每次运行都报调用次数与词元数，不靠估算
+- [x] 演示页：浏览提交、在页面上改一个文件并提交、切换深度、把被筛文件拉回来
+- [x] 回写 Pull Request：默认预演，行内评论只落在 diff 内
+- [x] 抽样：从被判跳过、没有排期的单元里按固定比例抽一批照样深挖，结果每次运行都报
+- [x] 静态分析作为第二路事实来源，只报落在新增行上的警告
+- [ ] 太胖的单元按方法边界再切
 
-## Knowing when "nobody calls it" is not the answer
+## 「没人调用」不等于「没问题」
 
-A call graph that comes back empty is ambiguous: either nobody uses the method, or the callers live
-outside this checkout. The graph alone cannot tell the two apart, so the model used to abandon those
-questions and leave only a fallback. `public_surface` answers the missing half — a `public` method on
-a `public` type is reachable from outside, so an empty caller list says nothing about external
-callers and the change has to be raised as a confirmation instead of dropped.
+调用图返回空是有歧义的：要么真没人用，要么调用方在仓库之外。只看图分不清这两种情况，模型以前就会在这里放弃，只留下一条兜底疑问句。`public_surface` 补上了另一半：public 类型上的 public 方法是仓库外可达的，那么「仓库里找不到调用方」就什么都证明不了，这条改动必须以确认而不是放弃收场。
 
-That one check moved evidence-backed recall from 50% to 65% on the same corpus, with no change to
-the triage stage and no extra model call. It is the cheapest improvement in the project: one
-syntactic look at the declaration's modifiers, and the loop stops treating "no caller" as "no
-problem".
+只加这一项检查，同一份语料上的带证据召回从 50% 涨到 65%，初审没动，模型调用也没多一次。它大概是整个项目里最便宜的一次改进：看一眼声明的修饰符，循环就不再拿「没调用方」当「没问题」。
 
-## Calling the code, not the name
+## 按类型找调用，不按名字
 
-`find_references` answers "which files mention this name", which is cheap and sometimes wrong:
-two classes with a `save` method, an overload, an interface with one implementation. `find_callers`
-resolves types instead and answers "which call sites actually reach this declaration". It is slower,
-so it exists only for the question that needs the accuracy.
+`find_references` 回答「哪些文件提到过这个名字」，便宜，但有时是错的：两个类都有 `save`、一个重载、一个接口一个实现。`find_callers` 走类型解析，回答「哪些调用点真的会到达这个声明」。它慢得多，所以只在需要准确的地方出现。
 
-The difference is measurable without a model, so it is measured. On spring-petclinic, over the first
-87 methods of `src/main/java`:
+这个差别不需要模型就能量。在 spring-petclinic 上取 `src/main/java` 前 87 个方法：
 
-| | count |
+| | 数量 |
 | --- | --- |
-| file mentions reported by the name index | 267 |
-| call sites resolved by the call graph | 181 |
-| mentions that belong to a method nobody calls | 99 |
+| 名字索引报出的文件提及 | 267 |
+| 调用图解析出的真实调用点 | 181 |
+| 属于「没人调用的方法」的提及 | 99 |
 
-The `name-only` column is where the two disagree in the dangerous direction. `NamedEntity.toString`
-is mentioned in eight files and called by none of them — every one of those calls lands on a
-different `toString`. A reviewer told "eight callers" would go looking for eight places to change.
+最后一行就是两种做法分歧最危险的方向。`NamedEntity.toString` 被八个文件提到，没有一处调用落在它身上——那些调用都落在别的 `toString` 上。一个被告知「有八个调用方」的审查者，会去找八个地方改。
 
-Reproduce with `com.codereview.agent.eval.CallerComparison <repository> <output.md>`; it needs no
-API key. The table is written to `eval/latest-callers.md`.
+复现命令是 `com.codereview.agent.eval.CallerComparison <仓库> <输出文件>`，不需要密钥，结果写到 `eval/latest-callers.md`。
 
-## Design notes
+## 设计取舍
 
-- **Evidence is checked, not requested.** A finding must cite evidence ids that resolve in the
-  observation store, and every file and line a comment mentions must appear in the cited evidence.
-  If that check fails the finding is dropped, not softened.
-- **A unit is a function.** Static analysis, coverage and call sites already speak in methods, so
-  choosing a function as the unit means no signal ever needs re-mapping.
-- **The budget is counted in units, not tokens.** A token budget is already spent by the time you
-  know where it went, and it starves a hard unit halfway through; a unit budget is fixed up front,
-  reproducible, and explainable in the plan.
-- **Triage is separable.** Its output is a JSON plan, so it can be run alone, diffed between runs,
-  and scored without spending a model call.
-- **Evidence is folded, not deleted.** The store keeps every excerpt and the conclusion-time checks
-  read the store, not the prompt. In the prompt, the newest few entries stay verbatim and older ones
-  collapse to their id and location, so they remain citable and re-readable through a tool call. On a
-  unit that gathers ten excerpts the evidence block drops from 2,820 to 480 characters.
-- **The model layer is a thin interface.** Tests run against a deterministic offline model; the
-  LangChain4j adapter is one implementation behind it.
-- **Each stage hands the next one its findings, not just its conclusions.** Triage passes its
-  name-level facts into the investigation prompt (marked as leads, never as verdicts), and
-  investigation passes its own tool-call log into the critic's prompt, including the calls that
-  found nothing, so the critic does not spend its four calls repeating them.
-- **A comment has to ask for something.** Every conclusion carries a demand: either `fix`
-  (something concrete is wrong here) or `confirm` (the author has to check something). A sentence
-  that only restates the diff is not a conclusion, and the verifier rejects a conclusion with no
-  demand at all; the prompt tells the model to abandon the question instead of filling the space.
-- **The answer shape is a schema, not a request.** The four replies the pipeline needs (triage
-  assessment, change summary, investigation turn, critic verdict) are forced through a tool call
-  whose JSON Schema is fixed in code, so a provider that honours tool choice cannot answer in the
-  wrong shape. DeepSeek rejects `json_schema` response formats, and `json_object` only promises
-  valid JSON, not the fields; a required tool call constrains both. The structured call also uses a
-  separate client instance, because asking for `json_object` and a tool call at once is rejected.
-- **The units the gate skipped are sampled, not trusted.** A review tool that says "nothing here"
-  cannot be checked by reading its comments, because the interesting cases are the ones it never
-  wrote. Setting a sample rate (5% is a reasonable default, 0 is off) sends a deterministic slice of
-  the skipped units through the same investigation and the same evidence gate, and the run reports
-  how many of them produced an evidence-backed conclusion. The slice is chosen from a hash of the
-  unit key, so re-running the same commit samples the same units and the estimate is comparable
-  between runs. It measures "of the units we let through, how many had something to say" — not the
-  true miss rate, which needs a corpus with known answers.
-- **Static analysis only speaks about the new lines.** A type-level defect (a string compared with
-  `==`, a caught `Throwable`, a stack trace printed to production) is invisible to structural
-  comparison, so it is a second fact source for triage. It runs on the head version and keeps only
-  warnings that land on the added lines: without that filter every review drowns in warnings the
-  author did not cause. The string check fires only when one side is a literal, which trades recall
-  for precision on purpose — flagging every `==` between two variables would report arithmetic
-  comparisons on every file.
-- **Running the tests is deliberately out of scope.** Executing the changed code would break the
-  read-only boundary, needs a build of the target repository, and invites flaky failures. The
-  evidence gate stops fabricated citations, which is the failure that matters for a comment; a
-  failing test would be stronger evidence, but it is a different product (`run_test` is the next
-  tool if this ever stops being a demo).
+- **证据是校验出来的，不是请求出来的。** 结论必须引用能在观测库里解析的编号，评论里提到的每个文件和行都必须出现在被引用的证据里。校验不过就丢弃，不做软化。
+- **单元就是函数。** 静态分析、测试覆盖、调用点本来就以方法为单位，选函数当单元意味着外部信号一次映射都不用做。
+- **预算按单元数算，不按词元算。** 词元预算是花完才知道花在哪，还会在单个难单元做到一半时把它饿死；单元预算事前定得下、可复现、计划里也解释得清。
+- **初审是可分离的。** 它的输出是一份 JSON 计划，能单独跑、能两次运行之间做 diff、能不花模型调用就被打分。
+- **证据折叠，不删除。** 观测库保存每一段摘录，结论校验读的是库而不是提示词。提示词里最新几条原文保留，更早的压成编号加位置，所以它们仍然可引用、也可以再调一次工具读回来。一个单元积累十条摘录时，证据块从 2820 字符降到 480。
+- **模型层是一个薄接口。** 测试跑确定性离线模型，LangChain4j 适配器只是接口后面的一个实现。
+- **每个阶段交给下一段的是发现，不只是结论。** 初审把自己的名字级事实传进深挖提示词（标明是线索、不是判决），深挖把自己的工具调用日志传进复核提示词，包括什么都没查到的那些，这样复核不会把四次预算花在重复动作上。
+- **评论必须提出诉求。** 每条结论都带一个 `demand`：`fix`（这里确实有具体问题）或 `confirm`（作者需要确认某件事）。只复述 diff 的句子不算结论，没有诉求的结论会被复核拒绝；提示词里也写明了，写不出可执行的诉求就放弃这个问题，不要凑句子。
+- **回答的形状是 schema，不是请求。** 流水线需要的四种回复（初审评估、改动摘要、深挖动作、复核判决）都走强制工具调用，JSON Schema 写在代码里，遵守工具选择的模型不可能答错形状。DeepSeek 拒绝 `json_schema` 这种 response format，`json_object` 只保证是合法 JSON、不保证字段，强制工具调用把两件事都约束住。结构化调用用的是另一个客户端实例，因为同时要 `json_object` 和工具调用会被接口拒绝。
+- **被放行的单元是抽样，不是信任。** 一个总说「这里没问题」的工具，靠读它写过的评论是查不出来的，因为有意思的情况恰恰是它没写的那些。设一个抽样比例（5% 合理，0 表示关闭）会把被跳过单元里固定的一批送进同样的深挖和同样的证据校验，运行结束报告其中有多少条产出了带证据的结论。抽样由单元标识的哈希决定，同一个提交重跑抽到同一批，估计值才可比。它衡量的是「我们放过去的单元里有多少其实有话说」，不是真正的漏检率，后者需要带标准答案的语料。
+- **静态分析只对新增行说话。** 类型层面的毛病（字符串用 `==` 比、捕获 `Throwable`、往生产代码里打堆栈）在结构比对里是看不见的，所以它是初审的第二路事实来源。它只跑改动后的版本，并且只保留落在新增行上的警告：少了这个过滤，每次审查都会被作者没写过的问题淹没。字符串比较只在有一侧是字面量时才报，这是拿召回换精确，因为给所有变量之间的 `==` 报警，等于给每个文件的算术比较都报一次。
+- **跑测试是故意不做的。** 执行被改的代码会破掉只读边界、需要先编译目标仓库、还会引入偶发失败。证据校验挡的是编造引用，那才是评论里真正致命的失败；一个失败的测试是更强的证据，但那是另一个产品，真要做，`run_test` 是下一个工具。
 
-## Evaluation
+## 评估
 
-`mvn -q compile` then `java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner`
-replays 22 mutations through the whole pipeline and writes `eval/latest-report.md` and
-`eval/latest-report.json`. Add `--real` to use the configured model instead of the stand-ins.
+`EvalRunner` 把变异体语料逐个提交到一个真实的 git 仓库里，再用完整流水线重放，结果写到 `eval/latest-report.md` 与 `latest-report.json`：
 
-Real model (`deepseek-chat`, temperature 0), latest run of 22 cases:
+```
+java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner <工作目录> <输出前缀> [--real]
+```
 
-| metric | value |
+加 `--real` 走配置好的真模型，不加就用离线的确定性替身。
+
+真模型（`deepseek-chat`，温度 0）最近一次 47 条用例：
+
+| 指标 | 数值 |
 | --- | --- |
-| cases | 47 |
-| triage recall | 77% (24/31) |
-| false-positive rate on clean changes | 6% (1/16) |
-| findings | 25 |
-| kept / downgraded / dropped | 14 / 16 / 0 |
-| end-to-end recall, any comment near the line | 74% |
-| end-to-end recall, comment cites evidence | 65% |
+| 用例数 | 47（31 条缺陷、16 条干净） |
+| 初审单元级召回 | 77%（24/31） |
+| 干净改动的误报率 | 6%（1/16） |
+| 结论总数 | 25 |
+| 维持 / 降级 / 撤销 | 14 / 16 / 0 |
+| 端到端召回，任何落点附近的评论 | 74% |
+| 端到端召回，评论引用了证据 | 65% |
 
-Widening the corpus cost recall: the earlier 22-case suite read 88%, this one reads 77%. The new
-cases include behaviour changes no shape rule recognises (a swapped operand, a changed multiplier),
-and the model declines more of them on the judging tier. A bigger corpus makes the number worse,
-which is the direction it should move.
+语料扩大之后召回反而下降：早先 22 条那一版读出来是 88%，这一版 77%。新增的用例里包含任何形状规则都认不出的行为变化（操作数互换、乘数改大），模型在待判断档上拒掉的也更多。语料变大让数字变差，这是它该走的方向。
 
-The two end-to-end rows are the same run. The wider one counts any comment within five lines of the
-injected defect, including the fallback question posted when a must-investigate unit ends without
-evidence. The narrower one counts only comments that cite evidence. Before the public-surface check
-below, those two rows read 72% and 50%; after it, 74% and 65%.
+两个端到端指标来自同一次运行。宽的那个算任何落在注入缺陷五行之内的评论，包括必查单元最后没拿到证据时发出的兜底疑问句；窄的那个只算引用了证据的评论。加上 `public_surface` 之前这两行是 72% 和 50%，之后是 74% 和 65%。
 
-Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
-every structural change, and the verifier stand-in retracts as soon as it reads a null check anywhere
-nearby — which is how one real defect (`resource-unclosed`) was dropped. Those rows measure wiring, not
-model quality. The rule-gated rows are the part no model can influence, and they are identical in both
-runs.
+读这些数字要小心。离线替身从不拒绝：「初审替身」对每种结构变化都提一个问题，「复核替身」只要在附近读到判空就撤销，语料里的 `resource-unclosed` 正是这样被丢掉的。这些行衡量的是接线，不是模型质量。规则决定的那两行不受任何模型影响，两次运行完全相同。
 
-Two semantic cases were added next, where no shape signals the bug. Logging the password in
-`AuthService.login` is caught, because the auth path is already flagged by rule; it took the model reading
-the line to say what was wrong with it. Moving `validate(order)` after `repository.save(order)` was not caught at
-all at first: two statements swapped places, no rule fired, and the cheap gate dropped the unit as a small
-shapeless change. A reorder is never a no-op — side effects have an order — so the statement multiset is
-now compared before the diff runs and a pure reorder is a mandatory shape. That cost one false positive at
-triage (the clean case swapping two list additions is investigated and comes back with no finding, so it
-pays model calls and produces no comment) and bought the ordering defect back.
+随后补了两条语义类用例，它们的位置没有任何形状信号。`AuthService.login` 里打印密码被抓到了，因为认证路径本来就被规则标着，但要说清哪里不对，仍然是模型读了那一行。把 `validate(order)` 挪到 `repository.save(order)` 之后，一开始完全没抓到：两条语句换了位置，没有规则触发，被便宜闸门当成小的无形状改动放掉了。换序从来不是空操作，副作用是有顺序的，所以现在先比较语句多重集，纯换序会作为必查形状报出来。代价是初审多一个误报（干净用例里交换两次列表添加的那条会被排期，深挖查完没有结论，等于花掉几次模型调用但不产出评论），换回来的是顺序类缺陷。
 
-Two of the new cases were added precisely because the first expanded run missed them, and each
-exposed a real gap. A boundary bug (`> 10` becoming `>= 10`) changed no shape the detector knew, so
-`OPERATOR-CHANGED` now compares statements with their operators blanked out and fires when only the
-operator differs. And the verification gate rejected correct conclusions that named removed code
-(`@Transactional`, `quantity > 10`): those strings cannot appear in the evidence, because the change
-took them away. Symbols are now also accepted from the unit's own before/after text — the diff is
-trusted input, the model is not — so invented names still die while conclusions about removals live.
+新增用例里有两条是因为第一次扩展后漏掉才补的，各自暴露了一个真缺口。边界缺陷（`> 10` 改成 `>= 10`）不改变任何已知形状，于是有了 `OPERATOR-CHANGED`：把两条语句的运算符抹掉再比，形状相同而运算符不同就报。另一处是证据校验误杀了「描述已消失代码」的正确结论（`@Transactional`、`quantity > 10` 这类字串不可能出现在证据里，因为改动把它们的源头删掉了）：现在符号也可以从单元自身改动前后的原文里取——diff 是可信输入，模型不是——编造的名字照样被杀，关于删除的结论能活下来。
 
-The real model is the opposite trade: it declines judge-tier units it finds unremarkable, so recall
-depends on how much the program decides before the model is asked. Two families are now decided by the
-program rather than by a judgement: control-flow shapes (a flipped condition, a lost early exit) and
-deletions with nothing added in their place. That moved recall from 64% to 82% with the false-positive
-rate still at zero, because clean refactors do not produce those shapes. Investigation used to lose the units it was given: two of them were
-scheduled with an empty question list (a rule that gates on a fact carries no shape evidence, and the
-fallback skipped those hits), and the loop could not tell that a tool call had already been made and
-returned nothing, so it retried the same call until the budget ran out. Both are fixed; what is left
-is two units whose conclusions pointed at lines the cited evidence does not cover.
+真模型是另一种取舍：它会把觉得平常的待判断单元拒掉，所以召回取决于程序在问模型之前先决定了多少。现在有两类完全由程序判：控制流形状（条件翻转、丢失的提前返回）和「删了代码但没有补」的删除。这让召回从 64% 走到 82%，误报率仍然是零，因为干净的重构不会产生这些形状。深挖那一侧曾经把它拿到的单元弄丢：有两个单元是带着空问题列表排期进去的（按事实判定的规则命中没有形状证据，兜底逻辑又跳过了这些命中），而循环也分不清「这条工具调用已经做过且什么都没返回」，于是一直重试到预算耗尽。两处都已修好，剩下的是两个结论指向了证据未覆盖的行。
 
-One run of sixteen cases is one sample, not a measurement of the model — the same code re-run shifted
-end-to-end recall by nine points. Treat the rule-gated rows as the stable part and the rest as a trend.
+十六个用例跑一次是一个样本，不是对模型的测量——同一份代码重跑，端到端召回能差九个点。把规则决定的那几行当稳定部分，其余当趋势看。
 
-The cheap gate is what moved the false-positive rate from 100% to 60% without touching recall: a unit
-whose changed parts are all shapeless leftovers and whose diff is four lines or fewer is skipped
-without a model call. It is deliberately conservative — any rule hit, mandatory or advisory, wins over
-it, because a one-line condition flip is exactly the small change that must not be waved through.
+便宜闸门是把误报率从 100% 压到 60% 却没动召回的那个东西：一个单元的改动部分全是无形状的剩余物、且 diff 不超过四行，就直接跳过、不调模型。它刻意保守——任何规则命中（必查或建议级）都优先于它，因为「一行条件翻转」恰恰是那种不能被放行的小改动。
 
-### What the gate was letting through
+### 闸门当时放过了什么
 
-The evaluation measures the units the program chose to investigate. It cannot see what the program
-threw away, so a sample of the skipped units was reviewed anyway at full depth (`SamplingSweep`,
-100% rate, one round per seed). Of the seven defects the gate had skipped, five were found with
-evidence-backed comments in one round, and a smaller three-case sweep found two of three. Every miss
-was a real defect, not a near miss: a magic number turned `9` into `8`, a bulk price multiplied by
-`100` instead of `10`, `return "not found"` became `return null`, a list gained a `null` element, and
-a constructor lost its `Objects.requireNonNull`. The gate had not been wrong about "small"; it had
-been wrong to read "small" as "safe". Results are in `eval/latest-sampling.md`.
+评估只看程序决定要查的单元，看不见被丢掉的。所以被跳过的单元又按全深度抽查了一遍（`SamplingSweep`，比例设成 100%，每个种子一轮）。七个被跳过的缺陷里，一轮抓到五个，另一次三条的抽查抓到两条。每一个漏掉的都是真缺陷，不是擦边：魔法数从 9 改成 8，批量单价从 10 改成 100，`return "not found"` 变成 `return null`，列表里多了一个 null 元素，构造函数丢掉了 `Objects.requireNonNull`。闸门对「小」没判断错，它错在把「小」读成了「安全」。数据在 `eval/latest-sampling.md`。
 
-Two shapes now catch that class without a model call: `LITERAL-CHANGED` (statements that are the
-same once literals are blanked, but whose literals differ — a number, a message, a returned value)
-and `NULL-ARGUMENT` (an added call passing a null literal). A removed guard is also recognised when
-it was an assignment of a checked value (`this.root = Objects.requireNonNull(root)`). Re-probing the
-seven skipped defects offline, six now reach must-investigate before any model is asked; the
-remaining one is a SQL string concatenation, which changes statement shape rather than a literal and
-is recorded as a known gap.
+现在有两类形状不花模型调用就能抓住这一类改动：`LITERAL-CHANGED`（把字面量抹掉之后两句相同，但字面量不同——一个数字、一句文案、一个返回值）和 `NULL-ARGUMENT`（新增调用传了 null 字面量）。另外，赋值形式的空值检查（`this.root = Objects.requireNonNull(root)`）被替换掉也算判空消失。离线重判那七个，六个现在会在问模型之前就进必查；剩下一个是 SQL 字符串拼接，它改变的是语句形状而不是字面量，记成已知缺口。
 
-The cost is measurable and small: of the sixteen clean cases, four became scheduled. Two are
-judge-tier and the model still declines them for free, one is a pure statement reorder (promoted to
-mandatory on purpose, and it stops at the investigation stage with no comment), and one was a false
-positive — rewording a log message. That one is fixed: a literal change inside a logging call is now
-recorded as an edit and never gates work.
+代价可以量，而且不大：十六个干净用例里有四个会进入排期。两个是待判断档、模型自己会拒所以不花钱，一个是纯语句换序（故意升成必查的，它会停在深挖阶段、不产出评论），还有一个是误报——改一行日志文案。后者已经修掉：日志调用内部的字面量变化会被记成一次编辑，不再触发任何闸门。
 
-### Ablation: what each stage earns
+### 消融：每一段换来了什么
 
-`AblationRunner` replays the same corpus at three depths — triage only, triage plus investigation,
-and the full pipeline — and writes `eval/latest-ablation.md`. Real model (`deepseek-chat`):
+`AblationRunner` 用同一份语料跑三档深度——只做初审、加深度、全流程——结果写到 `eval/latest-ablation.md`。真模型（`deepseek-chat`），语料是 22 条那一版：
 
-| depth | defects caught | clean changes flagged | comments | findings | model calls | tokens |
+| 深度 | 抓到的缺陷 | 被标记的干净改动 | 评论数 | 结论数 | 模型调用 | 词元 |
 |---|---|---|---|---|---|---|
-| triage only | 13/16 (81%) | 1/6 (17%) | 21 | 0 | 39 | 17,290 |
-| + investigation | 13/16 (81%) | 1/6 (17%) | 15 | 9 | 85 | 70,812 |
-| + verification (full) | 13/16 (81%) | 1/6 (17%) | 16 | 12 | 101 | 88,379 |
+| 只做初审 | 13/16（81%） | 1/6（17%） | 21 | 0 | 39 | 17,290 |
+| 加深挖 | 13/16（81%） | 1/6（17%） | 15 | 9 | 85 | 70,812 |
+| 加复核（全流程） | 13/16（81%） | 1/6（17%） | 16 | 12 | 101 | 88,379 |
 
-Recall does not move across the three rows, because it is decided in triage: if a unit is never
-scheduled, no later stage can rescue it. What the later stages buy is precision per comment — 21
-comments from triage alone, 16 after evidence and a critic, with the same defects covered. That is
-the trade to be argued about, so it is stated in the two numeric columns rather than in prose.
+三行召回完全不动，因为召回是初审决定的：一个单元没被排期，后面的阶段再强也救不回来。后面两段买的是每条评论的可信度——初审单独跑给出 21 条评论，过完证据和复核剩 16 条，覆盖的缺陷数一样。这是值得争论的取舍，所以它被写进两个数字列，而不是写成散文。
 
-The cost is not small: investigation takes the run from 17k to 71k tokens, verification adds another
-17k. Verification changed no verdict in this run, which is the honest state of that stage: it is
-implemented, it is cheap relative to investigation, and it has not yet earned its cost on this
-corpus. A critic that never changes anything is a cost with no measured benefit — the report prints
-`changedByCritic` precisely so that this stays visible instead of being inferred from a zero.
+成本不小：深挖把一次运行从 1.7 万词元推到 7.1 万，复核再加 1.7 万。这一次复核没有改变任何判决，这正是这一段的诚实状态：它实现了、相对深挖很便宜、但在这份语料上还没赚回自己的成本。一个从不改变任何东西的复核，就是一笔没有测到收益的开销——报告里专门打印 `changedByCritic`，就是为了让这件事一直可见，而不是让人从零里推断。
 
-To measure against a real model, set `CODEREVIEW_LLM_API_KEY` (and optionally
-`CODEREVIEW_LLM_BASE_URL`, `CODEREVIEW_LLM_MODEL`) and add `--real`; the harness itself is unchanged.
-Every run reports token usage through a process-wide ledger, so the cost of a stage is visible
-instead of assumed.
+要对着真模型量，设置 `CODEREVIEW_LLM_API_KEY`（可选 `CODEREVIEW_LLM_BASE_URL`、`CODEREVIEW_LLM_MODEL`）再加 `--real`，评估框架本身不用改。每次运行都通过进程级账本报告词元用量，每一段的成本是可见的，不是假设的。
 
-## Posting to a pull request
+## 回写到 Pull Request
 
 ```
 java -cp "target/classes;<classpath>" com.codereview.agent.publish.PostReview \
-     <repository> <base> <head> <owner/name> <pull number> [--real] [--dry-run]
+     <仓库> <起点> <终点> <owner/name> <pull number> [--real] [--dry-run]
 ```
 
-Dry run is the default: it prints the payload and writes `eval/latest-review-payload.json`.
-Posting needs `GITHUB_TOKEN` (fine-grained, pull-request write) and the explicit `--post` flag, so
-nothing writes to somebody's pull request by accident.
+默认是预演：打印请求体并写到 `eval/latest-review-payload.json`。真发需要 `GITHUB_TOKEN`（细粒度、能写 pull request）和显式的 `--post`，所以不会有人不小心往别人的 PR 上写东西。
 
-GitHub only accepts an inline comment on a line the pull request changed, so the comments whose
-lines fall outside the diff are moved into the review body instead of being dropped — a review that
-silently swallows half its comments is worse than one that lists them. Every inline comment carries
-the evidence ids it cites as a footnote, which is the same gate the pipeline enforces before the
-publishing step ever runs.
+GitHub 只接受落在 PR 改动行上的行内评论，所以落在 diff 之外的评论会被移进评论正文，而不是直接丢掉——悄悄吞掉一半评论的审查，比把剩下的列出来更糟。每条行内评论都带它引用的证据编号作脚注，那和流水线在发布之前执行的校验是同一道门。
 
-## Demo
+## 演示页
 
 ```
 mvn -q compile
 java -cp "target/classes;<classpath>" com.codereview.agent.web.DemoServer
 ```
 
-Open <http://127.0.0.1:8099/>. The page lists the repository's recent commits, lets you pick a
-range with one click per end, and shows the units it chose, the tier and outcome of each, what each
-unit cost in tool calls and tokens, the files screening dropped and why, and the comments that
-survived verification. The right panel edits a file and commits it, then reviews that commit
-immediately — the fastest way to see the gate react to a change you just made.
+打开 <http://127.0.0.1:8099/>。页面列出仓库最近的提交，两端各点一次就能选区间，然后展示它选了哪些单元、每个单元的档位与结局、每次调查花了多少次工具调用和多少词元、被筛掉的文件及原因，以及通过复核留下来的评论。右栏可以直接改一个文件并提交，然后立刻审这次提交——这是看闸门对你刚做的改动如何反应最快的方式。
 
-Three depths are selectable, so the ablation table above can be reproduced by clicking rather than
-by editing code. Screening is not a dead end: any dropped file can be pulled back into the run, and
-the run reports how many tokens it burned. The server binds to loopback only and, by default, uses
-the offline stand-ins so a click costs nothing; start it with `--real` to call the configured model
-instead.
+三档深度可以点选，所以上面那张消融表能靠点击复现，不用改代码。被筛掉不是死路：任何被丢掉的文件都能拉回本次运行，运行结束也会报这次烧了多少词元。服务只绑回环地址，默认用离线替身，所以点一次不花钱；带 `--real` 启动才会调真模型。
 
-## Build
+## 构建
 
-```bash
+```
 mvn test
 ```
 
-Requires JDK 21. No API keys are needed for the test suite.
+需要 JDK 21。测试套件不需要任何密钥。
 
-## License
+## 许可证
 
 MIT
