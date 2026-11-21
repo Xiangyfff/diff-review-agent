@@ -94,6 +94,12 @@ public final class EvalRunner {
         boolean lineMatched = report.comments().stream()
                 .anyMatch(comment -> Math.abs(comment.line() - anchorLine)
                         <= EvalReport.LINE_TOLERANCE);
+        for (com.codereview.agent.review.UnitOutcome unit : report.units()) {
+            if (unit.findings() == 0) {
+                System.out.println("EMPTY " + mutation.id() + " | " + unit.unitKey() + " | "
+                        + unit.outcome() + " | calls=" + unit.toolCalls() + " | " + unit.abandoned());
+            }
+        }
         return List.of(new CaseOutcome(mutation.id(), mutation.defective(), mutation.kind(),
                 report.units().size(), tier, report.findings(), report.assertions(),
                 report.questions(), report.dropped(), report.merged(),

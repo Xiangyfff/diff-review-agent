@@ -45,6 +45,7 @@ public final class InvestigationRunner {
         int fruitless = 0;
         String lastCall = null;
         String lastRejection = "";
+        List<String> attempts = new ArrayList<>();
         Map<String, Integer> rejections = new HashMap<>();
         InvestigationResult.Outcome outcome = InvestigationResult.Outcome.CONCLUDED;
 
@@ -60,7 +61,7 @@ public final class InvestigationRunner {
             turns++;
             InvestigationState state = new InvestigationState(task.unitKey(), task.file(), task.line(),
                     task.before(), task.after(), task.changes(), List.copyOf(open), store.all(),
-                    toolCalls, config.maxToolCalls() - toolCalls, lastRejection);
+                    toolCalls, config.maxToolCalls() - toolCalls, lastRejection, attempts);
 
             ModelTurn turn;
             try {
@@ -86,7 +87,10 @@ public final class InvestigationRunner {
                 // spent the whole budget re-reading one file.
                 boolean repeated = signature.equals(lastCall);
                 lastCall = signature;
-                boolean produced = runTool(call.call(), store) && !repeated;
+                String attempt = runTool(call.call(), store);
+                attempts.add(attempt);
+                boolean produced = !attempt.contains("-> no excerpt") && !attempt.contains("unknown tool")
+                        && !repeated;
                 fruitless = produced ? 0 : fruitless + 1;
                 if (fruitless >= FRUITLESS_CALLS_BEFORE_STALL) {
                     outcome = InvestigationResult.Outcome.STALLED;
@@ -121,8 +125,8 @@ public final class InvestigationRunner {
                     // handed back so the next turn can fix what the check complained about.
                     rejected++;
                     lastRejection = validation.reason();
-                    int attempts = rejections.merge(question.get().id(), 1, Integer::sum);
-                    if (attempts >= MAX_REJECTIONS_PER_QUESTION) {
+                    int rejectedSoFar = rejections.merge(question.get().id(), 1, Integer::sum);
+                    if (rejectedSoFar >= MAX_REJECTIONS_PER_QUESTION) {
                         remove(open, conclude.questionId());
                         abandoned.add(new InvestigationResult.Abandoned(question.get().id(),
                                 question.get().text(),
@@ -146,16 +150,25 @@ public final class InvestigationRunner {
      */
     private static final int MAX_REJECTIONS_PER_QUESTION = 2;
 
-    private boolean runTool(ToolCall call, EvidenceStore store) {
+    /**
+     * @return a one-line record of the call for the next prompt. A call that returned nothing still
+     *         has to be visible: without it the model cannot tell that it already tried this, and it
+     *         retries until the budget is gone.
+     */
+    private String runTool(ToolCall call, EvidenceStore store) {
+        String label = call.tool() + "(" + call.arguments().values() + ")";
         Optional<ReviewTool> tool = toolbox.find(call.tool());
         if (tool.isEmpty()) {
-            return false;
+            return label + " -> unknown tool";
         }
         ToolOutcome result = tool.get().run(call);
         for (ToolOutcome.Excerpt excerpt : result.excerpts()) {
             store.add(call.tool(), excerpt.file(), excerpt.startLine(), excerpt.endLine(), excerpt.text());
         }
-        return !result.excerpts().isEmpty();
+        if (result.excerpts().isEmpty()) {
+            return label + " -> no excerpt (" + result.summary() + ")";
+        }
+        return label + " -> " + result.excerpts().size() + " excerpt(s)";
     }
 
     private static String signatureOf(ToolCall call) {

@@ -139,9 +139,12 @@ public final class ReviewPipeline {
                         unit.category().name(), statusOf(verdict), finding.statement(),
                         finding.evidenceIds()));
             }
+            List<String> abandonReasons = result.abandoned().stream()
+                    .map(abandoned -> abandoned.question() + " -> " + abandoned.reason())
+                    .toList();
             outcomes.add(new UnitOutcome(unit.unit().file(), unit.unit().key(),
                     unit.tier().name(), unit.category().name(), result.outcome().name(),
-                    result.toolCalls(), result.findings().size(), verifyCalls));
+                    result.toolCalls(), result.findings().size(), verifyCalls, abandonReasons));
         }
         return new ReviewReport(baseRevision, headRevision, plan.stats(), outcomes, comments,
                 findings, dropped, invalidRetractions, merged);

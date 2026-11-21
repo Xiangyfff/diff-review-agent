@@ -119,7 +119,7 @@ class ModelAdaptersTest {
         var state = new com.codereview.agent.investigate.InvestigationState("METHOD#X.y()",
                 "src/X.java", 10, "void y() {}", "void y() { }", List.of("statement added"),
                 List.of(new com.codereview.agent.investigate.Question("q1", "这个值可能为空吗？")),
-                evidence, 3, 5, "");
+                evidence, 3, 5, "", java.util.List.of());
 
         List<String> prompts = new ArrayList<>();
         Chat chat = (system, user) -> {

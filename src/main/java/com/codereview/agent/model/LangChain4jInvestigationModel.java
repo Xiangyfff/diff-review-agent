@@ -39,6 +39,12 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
         this.toolbox = toolbox;
     }
 
+    private static int unitEndLine(InvestigationState state) {
+        String after = state.after() == null ? "" : state.after();
+        long lines = after.isEmpty() ? 0 : after.lines().count();
+        return (int) (state.line() + Math.max(0, lines - 1));
+    }
+
     @Override
     public ModelTurn next(InvestigationState state) {
         String reply = ModelCall.ask(chat, SYSTEM, render(state) + "\n\n" + SHAPE);
@@ -77,6 +83,10 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
 
     private String render(InvestigationState state) {
         StringBuilder text = new StringBuilder();
+        text.append("\n这段代码在本文件里从第 ").append(state.line()).append(" 行到第 ")
+                .append(unitEndLine(state)).append(" 行。\n");
+        text.append("结论里的 line 必须落在这个行范围内，或者落在你所引证据覆盖的行区间内；"
+                + "两者都不满足的结论会被机械校验拒绝。\n");
         text.append("单元：").append(state.unitKey()).append("（文件 ").append(state.file())
                 .append("，改动后从第 ").append(state.line()).append(" 行开始）\n\n");
         text.append("--- 改动前 ---\n").append(state.before()).append("\n--- 改动后 ---\n")
@@ -85,6 +95,14 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
         if (!state.changes().isEmpty()) {
             text.append("检测到的结构变化：\n");
             state.changes().forEach(change -> text.append("- ").append(change).append('\n'));
+            text.append('\n');
+        }
+
+        if (!state.attempts().isEmpty()) {
+            text.append("已经做过的工具调用（包括什么都没查到的）：\n");
+            for (String attempt : state.attempts()) {
+                text.append("- ").append(attempt).append('\n');
+            }
             text.append('\n');
         }
 
