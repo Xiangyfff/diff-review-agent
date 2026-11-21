@@ -63,6 +63,44 @@ class BodyDeltaTest {
                 "void m(int quantity) { boolean bulk = quantity > 20; use(bulk); }");
 
         assertThat(kinds(changes)).doesNotContain(StructuralChange.Kind.OPERATOR_CHANGED);
+        assertThat(kinds(changes)).contains(StructuralChange.Kind.LITERAL_CHANGED);
+    }
+
+    @Test
+    void aChangedLiteralKeepsItsOwnShapeEvenWhenTheOperatorsMatch() {
+        List<StructuralChange> changes = compare(
+                "int m(int quantity) { return quantity * 10; }",
+                "int m(int quantity) { return quantity * 100; }");
+
+        assertThat(kinds(changes)).containsExactly(StructuralChange.Kind.LITERAL_CHANGED);
+        assertThat(changes.get(0).detail()).contains("10").contains("100");
+    }
+
+    @Test
+    void aReturnValueChangedInsideABlockIsStillALiteralChange() {
+        List<StructuralChange> changes = compare(
+                "String handle(String id) { if (id == null) { return \"not found\"; } return id; }",
+                "String handle(String id) { if (id == null) { return null; } return id; }");
+
+        assertThat(kinds(changes)).contains(StructuralChange.Kind.LITERAL_CHANGED);
+    }
+
+    @Test
+    void aRenamedVariableIsNotALiteralChange() {
+        List<StructuralChange> changes = compare(
+                "int m(int quantity) { int total = quantity * 10; return total; }",
+                "int m(int quantity) { int sum = quantity * 10; return sum; }");
+
+        assertThat(kinds(changes)).doesNotContain(StructuralChange.Kind.LITERAL_CHANGED);
+    }
+
+    @Test
+    void aCallThatGainsANullArgumentIsReported() {
+        List<StructuralChange> changes = compare(
+                "void m(List<String> names) { names.add(\"a\"); }",
+                "void m(List<String> names) { names.add(\"a\"); names.add(null); }");
+
+        assertThat(kinds(changes)).contains(StructuralChange.Kind.NULL_ARGUMENT_ADDED);
     }
 
     @Test

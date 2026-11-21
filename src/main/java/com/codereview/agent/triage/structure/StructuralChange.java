@@ -32,6 +32,10 @@ public record StructuralChange(
         EARLY_EXIT_REMOVED,
         STATEMENTS_DELETED,
         OPERATOR_CHANGED,
+    /** A number or string literal changed while the statement kept its shape. */
+    LITERAL_CHANGED,
+    /** A call gained a null literal argument. */
+    NULL_ARGUMENT_ADDED,
         STATEMENTS_REORDERED,
         STATEMENTS_ADDED,
         /** Changed outside any declaration: imports, class header, annotations on the type. */

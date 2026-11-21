@@ -80,6 +80,8 @@ public final class MockTriageModel implements TriageModel {
             case STATEMENTS_DELETED -> "被删除的语句是否承担了某个副作用？";
             case STATEMENTS_ADDED -> "新增的语句在什么条件下会执行？";
             case OPERATOR_CHANGED -> "运算符改动之后，哪些输入的判断结果会与改动前不同？";
+            case LITERAL_CHANGED -> "这个字面量的改动是有意的吗，还是别处也需要同步改？";
+            case NULL_ARGUMENT_ADDED -> "传进去的 null 在被调方那边会被当成合法值处理吗？";
             case STATEMENTS_REORDERED -> "语句换序之后，副作用发生的顺序是否会改变结果？";
             case UNPARSED -> null;
         };

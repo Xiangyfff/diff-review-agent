@@ -68,6 +68,18 @@ public final class StructuralDeltaDetector {
         List<StructuralChange> changes = new ArrayList<>();
         DeclarationDelta.compare(before.get(), after.get(), line, changes);
         BodyDelta.compare(before.get(), after.get(), line, changes);
+        boolean nothingExact = changes.stream()
+                .noneMatch(change -> change.confidence() == StructuralChange.Confidence.EXACT);
+        if (nothingExact && Literals.onlyLiteralsDiffer(unit.textBefore(), unit.textAfter())
+                && !Literals.onlyLoggingLinesDiffer(unit.textBefore(), unit.textAfter())) {
+            // Nothing structured moved, but every difference sits inside a literal: a return value,
+            // a constant, a message. That is a change of intent the author made on purpose or by
+            // mistake, and it is invisible to every shape rule above, so say it plainly.
+            changes.add(StructuralChange.exact(StructuralChange.Kind.LITERAL_CHANGED, line,
+                    "only a literal changed: " + Literals.values(unit.textBefore())
+                            + " -> " + Literals.values(unit.textAfter()),
+                    unit.textBefore(), unit.textAfter()));
+        }
         if (changes.isEmpty()) {
             // The text differs but nothing recognisable: a field initializer, an annotation
             // argument, a comment-free syntactic tweak. Report the fact, not a guess.
