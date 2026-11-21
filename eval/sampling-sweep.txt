@@ -1,0 +1,7 @@
+rounds=1 cases=3
+  r1 discount-magic-number            sampled=1 comments=0 hit=no calls=5 tokens=7149
+  r1 not-found-returns-null           sampled=1 comments=1 hit=yes calls=5 tokens=7526
+      L17   `handle` 在找不到订单时由返回 "not found" 改为返回 `null`，而 `handle` 是 public 方法、仓库内无其他调用方，外部调用方可能仍按非空字符串处理返回值（如直接打印或拼接），从而出现 NPE 或输出 "null"。请作者确认外部调用方已同步处理 null 返回…
+  r1 require-nonnull-dropped          sampled=1 comments=1 hit=yes calls=10 tokens=15771
+      L17   构造函数去掉了 `Objects.requireNonNull(root)`，`root` 字段（`private final Path root`）现在可以接受 null，后续使用 root 的方法会拿到 null 而不是在构造时快速失败。请确认这是有意为之；若不是，应恢复空值校验或在使用处补空判…
+round 1: reviewed=3 caught=2 comments=2

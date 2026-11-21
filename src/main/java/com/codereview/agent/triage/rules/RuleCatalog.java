@@ -71,6 +71,14 @@ public final class RuleCatalog {
                 "a comparison or arithmetic operator changed, which is where boundary bugs live",
                 context -> context.has(StructuralChange.Kind.OPERATOR_CHANGED)));
 
+        defaults.add(new Rule("LITERAL-CHANGED", RiskCategory.LOGIC, true,
+                "a number or string literal is not what it was, and constants are where intent hides",
+                context -> context.has(StructuralChange.Kind.LITERAL_CHANGED)));
+
+        defaults.add(new Rule("NULL-ARGUMENT", RiskCategory.CONSISTENCY, true,
+                "an added call passes a null literal, which the callee must be able to absorb",
+                context -> context.has(StructuralChange.Kind.NULL_ARGUMENT_ADDED)));
+
         defaults.add(new Rule("SENSITIVE-PATH", RiskCategory.SECURITY, true,
                 "the unit lives where auth, payment or migrations are handled",
                 context -> SENSITIVE_PATH.matcher(context.path()).find()));

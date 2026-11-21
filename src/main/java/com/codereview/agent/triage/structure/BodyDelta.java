@@ -5,11 +5,13 @@ import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.InitializerDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NullLiteralExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
@@ -28,6 +30,7 @@ import java.util.LinkedHashSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -138,6 +141,8 @@ final class BodyDelta {
         detectUnclosedResource(added, line, changes, explained);
         detectRemovedEarlyExit(removed, added, line, changes, explained);
         detectOperatorChange(removed, added, line, changes, explained);
+        detectLiteralChange(removed, added, line, changes, explained);
+        detectNullArgument(added, line, changes, explained);
 
         reportLeftovers(removed, added, explained, line, changes);
     }
@@ -202,6 +207,71 @@ final class BodyDelta {
         return found;
     }
 
+    // ---- shape: the statement is the same except for a literal ---------------------------
+
+    /**
+     * A number or a string literal can change while every other token stays put:
+     * "quantity * 10" and "quantity * 100" have one shape and two intentions, and the intention is
+     * the whole defect. Blanking the literals finds such a pair; comparing the values then says
+     * whether it changed. Without this the pair falls through to "one statement removed, one added",
+     * which is advisory, and a two-line change like that can be gated away entirely.
+     */
+    private static void detectLiteralChange(List<Statement> removed, List<Statement> added, int line,
+                                            List<StructuralChange> changes, Set<Statement> explained) {
+        for (Statement old : removed) {
+            if (explained.contains(old)) {
+                continue;
+            }
+            String oldText = collapse(old.toString());
+            String oldShape = Literals.blank(oldText);
+            for (Statement now : added) {
+                if (explained.contains(now) || !oldShape.equals(Literals.blank(collapse(now.toString())))) {
+                    continue;
+                }
+                String newText = collapse(now.toString());
+                if (Literals.isLogging(oldText) && Literals.isLogging(newText)) {
+                    // Rewording a log message keeps the shape and changes only its text. It is a
+                    // real edit, but nothing downstream can act on it, so it must not gate work.
+                    explained.add(old);
+                    explained.add(now);
+                    break;
+                }
+                Set<String> before = Literals.values(oldText);
+                Set<String> after = Literals.values(newText);
+                if (before.equals(after)) {
+                    continue;
+                }
+                changes.add(StructuralChange.exact(StructuralChange.Kind.LITERAL_CHANGED, line,
+                        "literal changed from " + before + " to " + after,
+                        old.toString(), now.toString()));
+                explained.add(old);
+                explained.add(now);
+                break;
+            }
+        }
+    }
+
+    // ---- shape: a call gained a null argument --------------------------------------------
+
+    private static void detectNullArgument(List<Statement> added, int line,
+                                           List<StructuralChange> changes, Set<Statement> explained) {
+        for (Statement candidate : added) {
+            if (explained.contains(candidate)) {
+                continue;
+            }
+            boolean passesNull = candidate.findAll(MethodCallExpr.class).stream()
+                    .anyMatch(call -> call.getArguments().stream()
+                            .anyMatch(NullLiteralExpr.class::isInstance));
+            if (!passesNull) {
+                continue;
+            }
+            changes.add(StructuralChange.exact(StructuralChange.Kind.NULL_ARGUMENT_ADDED, line,
+                    "a call passes a null literal: " + collapse(candidate.toString()),
+                    "", candidate.toString()));
+            explained.add(candidate);
+        }
+    }
+
     // ---- shape: a null guard that used to be here is gone ------------------------------
 
     private static void detectRemovedNullGuard(List<Statement> removed, List<Statement> added, int line,
@@ -211,12 +281,25 @@ final class BodyDelta {
             if (guarded == null) {
                 continue;
             }
-            boolean stillGuarded = added.stream()
-                    .map(BodyDelta::nullGuardedExpression)
-                    .anyMatch(guarded::equals);
-            if (stillGuarded) {
-                // Moved to another statement in the same block: a rewrite, not a removal.
+            Statement survivor = added.stream()
+                    .filter(other -> guarded.equals(nullGuardedExpression(other)))
+                    .findFirst()
+                    .orElse(null);
+            if (survivor != null) {
+                // The guard is still there. Whatever changed is inside it, so compare the two
+                // statements instead of calling the guard removed: a guard whose body changed is
+                // not a missing guard, and saying so would be a false positive on every edit of
+                // the error path.
                 explained.add(candidate);
+                explained.add(survivor);
+                String before = candidate.toString();
+                String after = survivor.toString();
+                if (!collapse(before).equals(collapse(after)) && Literals.onlyLiteralsDiffer(before, after)) {
+                    changes.add(StructuralChange.exact(StructuralChange.Kind.LITERAL_CHANGED, line,
+                            "return value inside the guard changed: " + Literals.values(before)
+                                    + " -> " + Literals.values(after),
+                            before, after));
+                }
                 continue;
             }
             changes.add(StructuralChange.exact(StructuralChange.Kind.NULL_CHECK_REMOVED, line,
@@ -230,13 +313,29 @@ final class BodyDelta {
         if (statement instanceof IfStmt ifStatement) {
             return nullComparedOperand(ifStatement.getCondition());
         }
-        if (statement instanceof ExpressionStmt expressionStatement
-                && expressionStatement.getExpression() instanceof MethodCallExpr call
-                && NON_NULL_CHECKS.contains(call.getNameAsString())
-                && !call.getArguments().isEmpty()) {
-            return collapse(call.getArgument(0));
+        if (statement instanceof ExpressionStmt expressionStatement) {
+            Expression expression = expressionStatement.getExpression();
+            if (expression instanceof MethodCallExpr call) {
+                return checkedOperand(call);
+            }
+            // "this.root = Objects.requireNonNull(root)" guards on the right-hand side; the
+            // statement is an assignment, not a call, and dropping it removes the guard just the same.
+            if (expression instanceof AssignExpr assignment) {
+                return assignment.getValue().findAll(MethodCallExpr.class).stream()
+                        .map(BodyDelta::checkedOperand)
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(null);
+            }
         }
         return null;
+    }
+
+    private static String checkedOperand(MethodCallExpr call) {
+        if (!NON_NULL_CHECKS.contains(call.getNameAsString()) || call.getArguments().isEmpty()) {
+            return null;
+        }
+        return collapse(call.getArgument(0));
     }
 
     private static String nullComparedOperand(Expression condition) {
