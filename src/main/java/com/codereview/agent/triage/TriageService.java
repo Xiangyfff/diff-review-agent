@@ -19,6 +19,7 @@ import com.codereview.agent.triage.plan.TriageStats;
 import com.codereview.agent.triage.rules.RuleCatalog;
 import com.codereview.agent.triage.rules.RuleContext;
 import com.codereview.agent.triage.rules.RuleHit;
+import com.codereview.agent.triage.screen.ScreenedFile;
 import com.codereview.agent.triage.screen.Screening;
 import com.codereview.agent.triage.structure.StructuralDeltaDetector;
 import com.codereview.agent.triage.tier.Tier;
@@ -92,6 +93,14 @@ public final class TriageService {
         return new TriageService(new MockTriageModel(), TriageConfig.defaults());
     }
 
+    /**
+     * The same service, but files under the given path prefixes are never screened out. Used to pull
+     * back something a reviewer believes screening got wrong, without editing code and restarting.
+     */
+    public TriageService including(List<String> includePaths) {
+        return new TriageService(model, config, new Screening(includePaths), parser, rules, index);
+    }
+
     public TriagePlan triage(Path repositoryPath, String baseRevision, String headRevision) throws IOException {
         List<FileChange> changes = new RepositoryChangeSource().changes(repositoryPath, baseRevision, headRevision);
         SymbolIndex repositoryIndex = new IndexBuilder(parser).build(repositoryPath).index();
@@ -104,13 +113,14 @@ public final class TriageService {
 
     private TriagePlan plan(List<FileChange> changes, String baseRevision, String headRevision,
                             SymbolIndex symbolIndex) {
-        int screenedOut = 0;
+        List<ScreenedFile> skipped = new ArrayList<>();
         List<FileChange> reviewed = new ArrayList<>();
         List<AnalysisUnit> units = new ArrayList<>();
 
         for (FileChange change : changes) {
-            if (!screening.screen(change).review()) {
-                screenedOut++;
+            Screening.Decision decision = screening.screen(change);
+            if (!decision.review()) {
+                skipped.add(new ScreenedFile(change.displayPath(), decision.reason()));
                 continue;
             }
             reviewed.add(change);
@@ -131,10 +141,11 @@ public final class TriageService {
             intent = model.summarize(overview(reviewed, assembled.units()));
         }
 
-        TriageStats stats = stats(changes.size(), screenedOut, assembled.units(),
+        TriageStats stats = stats(changes.size(), List.copyOf(skipped), assembled.units(),
                 assembled.invalidQuestions(), assembled.calibrationDisagreements(),
                 unparsed.get(), modelCalls.get());
-        return new TriagePlan(baseRevision, headRevision, intent, assembled.units(), stats);
+        return new TriagePlan(baseRevision, headRevision, intent, assembled.units(), stats,
+                skipped);
     }
 
     private List<PlanAssembler.Candidate> assessAll(List<AnalysisUnit> units, AtomicInteger modelCalls,
@@ -263,7 +274,8 @@ public final class TriageService {
         return new ChangeOverview(summaries, added, removed, units.size());
     }
 
-    private static TriageStats stats(int filesSeen, int screenedOut, List<PlannedUnit> units,
+    private static TriageStats stats(int filesSeen, List<ScreenedFile> skipped,
+            List<PlannedUnit> units,
                                      int invalidQuestions, int disagreements, int unparsed, int modelCalls) {
         int must = 0;
         int judge = 0;
@@ -283,7 +295,7 @@ public final class TriageService {
                 budgetSkipped++;
             }
         }
-        return new TriageStats(filesSeen, screenedOut, units.size(), must, judge, skip, scheduled,
+        return new TriageStats(filesSeen, skipped.size(), units.size(), must, judge, skip, scheduled,
                 budgetSkipped, invalidQuestions, disagreements, unparsed, modelCalls);
     }
 }

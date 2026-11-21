@@ -15,10 +15,12 @@ import com.codereview.agent.triage.TriageService;
 import com.codereview.agent.triage.index.IndexBuilder;
 import com.codereview.agent.triage.index.SymbolIndex;
 import com.codereview.agent.triage.parse.SourceParser;
+import com.codereview.agent.triage.model.FindingQuestion;
 import com.codereview.agent.triage.plan.PlannedUnit;
 import com.codereview.agent.triage.tier.Tier;
 import com.codereview.agent.triage.plan.TriagePlan;
 import com.codereview.agent.verify.MockVerifier;
+import com.codereview.agent.verify.Verdict;
 import com.codereview.agent.verify.VerificationRequest;
 import com.codereview.agent.verify.VerifyConfig;
 import com.codereview.agent.verify.VerifyResult;
@@ -90,7 +92,56 @@ public final class ReviewPipeline {
 
     public ReviewReport run(Path repository, String baseRevision, String headRevision)
             throws IOException {
-        TriagePlan plan = triage.triage(repository, baseRevision, headRevision);
+        return run(repository, baseRevision, headRevision, Depth.FULL);
+    }
+
+    /**
+     * Runs the pipeline down to the given depth. Stopping early is not a debugging switch: the three
+     * depths are the rows of the ablation table, which is the only evidence that each stage earns
+     * its cost.
+     */
+    public ReviewReport run(Path repository, String baseRevision, String headRevision, Depth depth)
+            throws IOException {
+        return run(repository, baseRevision, headRevision, depth, List.of());
+    }
+
+    /**
+     * @param includePaths path prefixes screening must not drop; the manual way back in
+     */
+    public ReviewReport run(Path repository, String baseRevision, String headRevision, Depth depth,
+            List<String> includePaths) throws IOException {
+        TriagePlan plan = triage.including(includePaths).triage(repository, baseRevision, headRevision);
+
+        List<UnitOutcome> outcomes = new ArrayList<>();
+        List<Comment> comments = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        int findings = 0;
+        int dropped = 0;
+        int invalidRetractions = 0;
+        int merged = 0;
+
+        if (depth == Depth.TRIAGE_ONLY) {
+            // The baseline a reviewer without any tools would give: every question triage raised is
+            // published as-is. Nothing is read, so nothing can be checked.
+            for (PlannedUnit unit : plan.scheduled()) {
+                for (FindingQuestion question : unit.questions()) {
+                    String key = unit.unit().file() + "|" + unit.unit().startLine() + "|"
+                            + question.text();
+                    if (!seen.add(key)) {
+                        merged++;
+                        continue;
+                    }
+                    comments.add(new Comment(unit.unit().file(), unit.unit().startLine(),
+                            unit.category().name(), Comment.Status.QUESTION, question.text(),
+                            List.of()));
+                }
+                outcomes.add(new UnitOutcome(unit.unit().file(), unit.unit().key(),
+                        unit.tier().name(), unit.category().name(), "TRIAGE_ONLY", 0, 0, 0,
+                        List.of()));
+            }
+            return new ReviewReport(baseRevision, headRevision, plan.stats(), outcomes, comments,
+                    findings, dropped, invalidRetractions, merged, plan.screenedOut());
+        }
 
         // The index is rebuilt here instead of being handed over by triage: triage owns its own
         // copy for prompts, and tying the two stages together through a shared mutable index would
@@ -101,27 +152,25 @@ public final class ReviewPipeline {
                 : models.investigation(toolbox);
         InvestigationRunner investigator = new InvestigationRunner(investigatorModel, toolbox,
                 investigateConfig);
-        VerifierRunner verifierRunner = new VerifierRunner(verifier, toolbox, verifyConfig);
-
-        List<UnitOutcome> outcomes = new ArrayList<>();
-        List<Comment> comments = new ArrayList<>();
-        int findings = 0;
-        int dropped = 0;
-        int invalidRetractions = 0;
-        int merged = 0;
-        java.util.Set<String> seen = new java.util.HashSet<>();
+        VerifierRunner verifierRunner = depth == Depth.FULL
+                ? new VerifierRunner(verifier, toolbox, verifyConfig) : null;
 
         for (PlannedUnit unit : plan.scheduled()) {
             InvestigationResult result = investigator.investigate(taskOf(unit));
             findings += result.findings().size();
             int verifyCalls = 0;
             for (Finding finding : result.findings()) {
-                List<Evidence> cited = result.evidence().stream()
-                        .filter(evidence -> finding.evidenceIds().contains(evidence.id()))
-                        .toList();
-                VerifyResult verdict = verifierRunner.review(new VerificationRequest(finding, cited,
-                        unit.unit().textBefore(), unit.unit().textAfter(), result.attempts()));
-                verifyCalls += verdict.toolCalls();
+                VerifyResult verdict;
+                if (verifierRunner == null) {
+                    verdict = VerifyResult.of(finding, new Verdict.Keep("没有开启复核阶段"), 0);
+                } else {
+                    List<Evidence> cited = result.evidence().stream()
+                            .filter(evidence -> finding.evidenceIds().contains(evidence.id()))
+                            .toList();
+                    verdict = verifierRunner.review(new VerificationRequest(finding, cited,
+                            unit.unit().textBefore(), unit.unit().textAfter(), result.attempts()));
+                    verifyCalls += verdict.toolCalls();
+                }
                 if (verdict.invalid()) {
                     invalidRetractions++;
                 }
@@ -141,12 +190,12 @@ public final class ReviewPipeline {
                         finding.evidenceIds()));
             }
             // A unit the rules insist on investigating must not end up silent just because the
-        // model gave up. Turn that outcome into a question the author can answer, and say
-        // plainly that the evidence never arrived.
-        if (result.findings().isEmpty() && unit.tier() == Tier.MUST_INVESTIGATE) {
-            comments.add(unverified(unit));
-        }
-        List<String> abandonReasons = result.abandoned().stream()
+            // model gave up. Turn that outcome into a question the author can answer, and say
+            // plainly that the evidence never arrived.
+            if (result.findings().isEmpty() && unit.tier() == Tier.MUST_INVESTIGATE) {
+                comments.add(unverified(unit));
+            }
+            List<String> abandonReasons = result.abandoned().stream()
                     .map(abandoned -> abandoned.question() + " -> " + abandoned.reason())
                     .toList();
             outcomes.add(new UnitOutcome(unit.unit().file(), unit.unit().key(),
@@ -154,7 +203,7 @@ public final class ReviewPipeline {
                     result.toolCalls(), result.findings().size(), verifyCalls, abandonReasons));
         }
         return new ReviewReport(baseRevision, headRevision, plan.stats(), outcomes, comments,
-                findings, dropped, invalidRetractions, merged);
+                findings, dropped, invalidRetractions, merged, plan.screenedOut());
     }
 
     public static void main(String[] args) throws Exception {

@@ -50,13 +50,17 @@ strong counter-evidence retracts.
 - [x] Investigate — five read-only tools, question queue, evidence store, five mechanical checks,
       six counted outcomes
 - [x] Verify — evidence-backed refutation, keep / downgrade / retract
-- [x] Evaluation — 16 mutation cases, report written to `eval/latest-report.md`
+- [x] Evaluation — 22 mutation cases, report written to `eval/latest-report.md`
 - [x] Pipeline — triage → investigate → verify → comments, one command
-- [x] 118 tests, no network required
+- [x] 120 tests, no network required
 - [x] LangChain4j model adapter — one class imports the SDK, everything else speaks prompts and JSON
 - [x] Cheap gate for the judge tier — a small, shapeless change never reaches the model
-- [ ] Real-model numbers (needs an API key; the offline numbers above come from the stand-ins)
+- [x] Real-model numbers (`deepseek-chat`, 22 cases; see the Evaluation table)
+- [x] Ablation across the three depths, written to `eval/latest-ablation.md`
+- [x] Token ledger — every run reports calls and tokens instead of assuming the cost
+- [x] Demo page — browse commits, review an edit made in the page, pick a depth, pull a screened file back in
 - [ ] GitHub App that posts the comments as a review
+- [ ] Split a unit that is too large at method boundaries
 
 ## Design notes
 
@@ -158,9 +162,28 @@ whose changed parts are all shapeless leftovers and whose diff is four lines or 
 without a model call. It is deliberately conservative — any rule hit, mandatory or advisory, wins over
 it, because a one-line condition flip is exactly the small change that must not be waved through.
 
+### Ablation: what each stage earns
+
+`AblationRunner` replays the same corpus at three depths — triage only, triage plus investigation,
+and the full pipeline — and writes `eval/latest-ablation.md`:
+
+| depth | defects caught | clean changes flagged | comments | findings |
+|---|---|---|---|---|
+| triage only | 14/16 (88%) | 2/6 (33%) | 20 | 0 |
+| + investigation | 12/16 (75%) | 2/6 | 17 | 20 |
+| + verification (full) | 11/16 (69%) | 2/6 | 16 | 20 |
+
+These are offline stand-in numbers and they are not flattering: the stand-in investigator adds
+constraints without adding evidence, because it concludes the same templated sentence every time.
+The point of the table is the shape, not the values — it is the thing that has to be re-run against a
+real model before any of these stages can be said to earn its cost. Triage-only posting every
+question as a comment is deliberately cheap and noisy; that is the baseline the other two rows are
+measured against.
+
 To measure against a real model, set `CODEREVIEW_LLM_API_KEY` (and optionally
-`CODEREVIEW_LLM_BASE_URL`, `CODEREVIEW_LLM_MODEL`) and run `ReviewPipeline` instead of the offline
-stand-ins; the harness itself is unchanged.
+`CODEREVIEW_LLM_BASE_URL`, `CODEREVIEW_LLM_MODEL`) and add `--real`; the harness itself is unchanged.
+Every run reports token usage through a process-wide ledger, so the cost of a stage is visible
+instead of assumed.
 
 ## Demo
 
@@ -169,10 +192,17 @@ mvn -q compile
 java -cp "target/classes;<classpath>" com.codereview.agent.web.DemoServer
 ```
 
-Open <http://127.0.0.1:8099/>, paste a repository path and two revisions, and the page shows the
-units it chose, the tier and outcome of each, and the comments that survived verification. The
-server binds to loopback only, and by default it uses the offline stand-ins so a click costs
-nothing; start it with `--real` to call the configured model instead.
+Open <http://127.0.0.1:8099/>. The page lists the repository's recent commits, lets you pick a
+range with one click per end, and shows the units it chose, the tier and outcome of each, what each
+unit cost in tool calls and tokens, the files screening dropped and why, and the comments that
+survived verification. The right panel edits a file and commits it, then reviews that commit
+immediately — the fastest way to see the gate react to a change you just made.
+
+Three depths are selectable, so the ablation table above can be reproduced by clicking rather than
+by editing code. Screening is not a dead end: any dropped file can be pulled back into the run, and
+the run reports how many tokens it burned. The server binds to loopback only and, by default, uses
+the offline stand-ins so a click costs nothing; start it with `--real` to call the configured model
+instead.
 
 ## Build
 

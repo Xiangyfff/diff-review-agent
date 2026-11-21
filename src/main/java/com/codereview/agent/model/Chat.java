@@ -43,6 +43,10 @@ public interface Chat {
         return (system, user) -> {
             List<ChatMessage> messages = List.of(SystemMessage.from(system), UserMessage.from(user));
             ChatResponse response = model.chat(messages);
+            if (response.tokenUsage() != null) {
+                TokenLedger.record(response.tokenUsage().inputTokenCount(),
+                        response.tokenUsage().outputTokenCount());
+            }
             String text = response.aiMessage().text();
             if (text == null || text.isBlank()) {
                 throw new IllegalStateException("the model returned an empty message");

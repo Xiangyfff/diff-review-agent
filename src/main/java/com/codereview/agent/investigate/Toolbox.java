@@ -10,6 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The tools one investigation may use, keyed by the name the model is told to call.
@@ -31,11 +33,43 @@ public final class Toolbox {
 
     public static Toolbox standard(RepoAccess repository) {
         return new Toolbox(List.of(
-                new ReadLinesTool(repository),
-                new FindDefinitionTool(repository),
-                new FindReferencesTool(repository),
-                new SearchTool(repository),
-                new HistoryTool(repository)));
+                cached(new ReadLinesTool(repository)),
+                cached(new FindDefinitionTool(repository)),
+                cached(new FindReferencesTool(repository)),
+                cached(new SearchTool(repository)),
+                cached(new HistoryTool(repository))));
+    }
+
+    /**
+     * The repository does not move during a review, so asking it the same question twice can only
+     * produce the same answer. Caching here saves a tool call from being re-executed, but it does
+     * not make a repeated call look productive: the runner detects the duplicate request itself and
+     * counts it as no new information.
+     */
+    private static ReviewTool cached(ReviewTool tool) {
+        Map<String, ToolOutcome> memory = new ConcurrentHashMap<>();
+        return new ReviewTool() {
+            @Override
+            public String name() {
+                return tool.name();
+            }
+
+            @Override
+            public String purpose() {
+                return tool.purpose();
+            }
+
+            @Override
+            public String arguments() {
+                return tool.arguments();
+            }
+
+            @Override
+            public ToolOutcome run(ToolCall call) {
+                String key = tool.name() + "|" + new TreeMap<>(call.arguments());
+                return memory.computeIfAbsent(key, ignored -> tool.run(call));
+            }
+        };
     }
 
     public Optional<ReviewTool> find(String name) {

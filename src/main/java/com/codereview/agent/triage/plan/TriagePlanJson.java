@@ -2,6 +2,7 @@ package com.codereview.agent.triage.plan;
 
 import com.codereview.agent.triage.model.FindingQuestion;
 import com.codereview.agent.triage.rules.RuleHit;
+import com.codereview.agent.triage.screen.ScreenedFile;
 import com.codereview.agent.triage.structure.StructuralChange;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -33,6 +34,15 @@ public final class TriagePlanJson {
         ArrayNode units = root.putArray("units");
         for (PlannedUnit unit : plan.units()) {
             units.add(renderUnit(unit));
+        }
+
+        if (!plan.screenedOut().isEmpty()) {
+            ArrayNode skipped = root.putArray("screenedOut");
+            for (ScreenedFile file : plan.screenedOut()) {
+                ObjectNode node = skipped.addObject();
+                node.put("path", file.path());
+                node.put("reason", file.reason());
+            }
         }
 
         ObjectNode stats = root.putObject("stats");

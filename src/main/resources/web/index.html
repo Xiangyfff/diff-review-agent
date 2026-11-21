@@ -78,7 +78,7 @@
   .commit .id { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); width: 62px; flex: 0 0 62px; }
   .commit .msg { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .commit .pick { font-size: 11px; padding: 3px 8px; }
-  .cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
   @media (max-width: 900px) { .cards { grid-template-columns: repeat(3, 1fr); } }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
   .card .num { font-size: 22px; font-weight: 600; }
@@ -123,6 +123,14 @@
         <label for="head">结束提交</label>
         <input type="text" id="head" spellcheck="false">
       </div>
+      <div class="tight">
+        <label for="depth">审查深度</label>
+        <select id="depth">
+          <option value="FULL">完整（初审 + 取证 + 复核）</option>
+          <option value="WITH_INVESTIGATION">不跑复核</option>
+          <option value="TRIAGE_ONLY">只做初审</option>
+        </select>
+      </div>
       <div class="tight"><button id="review">开始审查</button></div>
     </div>
     <div class="hint" id="modeHint">正在确认模型…</div>
@@ -157,6 +165,11 @@
       <div id="units"></div>
     </section>
     <section class="panel">
+      <h2>被筛除的文件（这里可以把它强行拉回审查）</h2>
+      <div id="screened"></div>
+    </section>
+
+    <section class="panel">
       <h2>评论</h2>
       <div id="comments"></div>
     </section>
@@ -167,6 +180,8 @@
 const $ = (id) => document.getElementById(id);
 const repo = () => $("repository").value.trim();
 let currentFile = "";
+let include = [];
+let lastRun = null;
 
 function api(path, options) {
   return fetch(path, options).then(async (response) => {
@@ -182,6 +197,50 @@ function showError(message) {
   $("cards").innerHTML = "";
   box.innerHTML = `<div class="error">${message}</div>`;
   $("comments").innerHTML = "";
+}
+
+function tokenCaption(tokens) {
+  if (!tokens || !tokens.calls) {
+    return "0 次调用";
+  }
+  return `${tokens.calls} 次 · ${tokens.total} 令牌`;
+}
+
+function renderScreened(files) {
+  if (include.length) {
+    $("screened").innerHTML = `<div class="note" style="margin-bottom:8px">已强制纳入：${include.map(escapeHtml).join("、")}
+      <button class="ghost" id="clearInclude" style="margin-left:8px">清除</button></div>`;
+    $("clearInclude").onclick = () => { include = []; review(); };
+    $("screened").insertAdjacentHTML("beforeend", screenedRows(files));
+    bindIncludeButtons(files);
+    return;
+  }
+  if (!files.length) {
+    $("screened").innerHTML = '<div class="empty">没有被筛除的文件。</div>';
+    return;
+  }
+  $("screened").innerHTML = screenedRows(files);
+  bindIncludeButtons(files);
+}
+
+function screenedRows(files) {
+  return files.map((file, index) => `
+    <div class="row" style="align-items:flex-start; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--line)">
+      <div>
+        <code class="path">${escapeHtml(file.path)}</code>
+        <div class="note">${escapeHtml(file.reason)}</div>
+      </div>
+      <div class="tight"><button class="ghost" data-include="${index}">强行纳入</button></div>
+    </div>`).join("");
+}
+
+function bindIncludeButtons(files) {
+  $("screened").querySelectorAll("[data-include]").forEach((button) => {
+    button.onclick = () => {
+      include = include.concat([files[Number(button.dataset.include)].path]);
+      review();
+    };
+  });
 }
 
 function card(value, caption) {
@@ -259,10 +318,18 @@ function review() {
   }
   $("review").disabled = true;
   $("review").textContent = "审查中…";
+  const payload = {
+    repository: $("repository").value.trim(),
+    base: $("base").value.trim(),
+    head: $("head").value.trim(),
+    depth: $("depth").value,
+    include: include
+  };
+  lastRun = payload;
   api("/api/review", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repository: $("repository").value.trim(), base: $("base").value.trim(), head: $("head").value.trim() })
+    body: JSON.stringify(payload)
   }).then((data) => {
     render(data);
   }).catch((error) => {
@@ -281,8 +348,11 @@ function render(data) {
     card(data.assertions, "需修改"),
     card(data.questions, "待确认"),
     card(data.dropped, "被丢弃"),
+    card(tokenCaption(data.tokens), "模型消耗"),
     card(data.durationMs + " ms", "耗时")
   ].join("");
+
+  renderScreened(data.screenedOut || []);
 
   if (!data.unitOutcomes.length) {
     $("units").innerHTML = '<div class="empty">该区间没有可审查的改动。</div>';
