@@ -1,6 +1,7 @@
 package com.codereview.agent.eval;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -35,7 +36,7 @@ public final class EvalCorpus {
         String controller = "src/main/java/com/example/order/OrderController.java";
         String auth = "src/main/java/com/example/auth/AuthService.java";
 
-        return List.of(
+        List<MutationCase> core = List.of(
                 new MutationCase("null-guard-removed", service,
                         join("        if (order == null) {", "            return null;", "        }"),
                         "", "return repository.findByName(order.getName());", true,
@@ -158,6 +159,143 @@ public final class EvalCorpus {
                         join("        validate(order);", "        repository.save(order);"),
                         join("        repository.save(order);", "        validate(order);"),
                         join("repository.save(order);", "        validate(order);"), true, "semantic-order"));
+        List<MutationCase> all = new ArrayList<>(core);
+        all.addAll(extraCases(service, price, repository, controller, auth));
+        return all;
+    }
+
+    /** Additional mutations, applied after the core sequence, so later searches see earlier edits. */
+    private static List<MutationCase> extraCases(String service, String price, String repository,
+                                                 String controller, String auth) {
+        List<MutationCase> cases = new ArrayList<>();
+
+        cases.add(new MutationCase("audit-visibility-widened", service,
+                "    private void audit(Order order) {",
+                "    public void audit(Order order) {",
+                "public void audit", true, "contract"));
+
+        cases.add(new MutationCase("validate-guard-removed", service,
+                join("        if (order == null) {",
+                        "            log.warn(\"order is missing\");",
+                        "            throw new IllegalArgumentException(\"order must not be null\");",
+                        "        }"),
+                "", "public void save", true, "consistency"));
+
+        cases.add(new MutationCase("stub-comment-reworded", repository,
+                "        // no-op stub",
+                "        // still a stub", "still a stub", false, "clean"));
+
+        cases.add(new MutationCase("tax-added-instead-of-subtracted", price,
+                "        return amount + tax;",
+                "        return amount - tax;", "amount - tax", true, "arithmetic"));
+
+        cases.add(new MutationCase("discount-magic-number", price,
+                "            return quantity * 9;",
+                "            return quantity * 8;", "* 8;", true, "arithmetic"));
+
+        cases.add(new MutationCase("discount-bulk-multiplier", price,
+                "        return quantity * 10;",
+                "        return quantity * 100;", "* 100;", true, "arithmetic"));
+
+        cases.add(new MutationCase("auth-always-true", auth,
+                "        return user.equalsIgnoreCase(password);",
+                "        return true;", "return true;", true, "security"));
+
+        cases.add(new MutationCase("handle-made-public", controller,
+                "    private String handle(String id) {",
+                "    public String handle(String id) {",
+                "public String handle", true, "contract"));
+
+        cases.add(new MutationCase("not-found-returns-null", controller,
+                "            return \"not found\";",
+                "            return null;", "return null;", true, "semantic"));
+
+        cases.add(new MutationCase("null-added-to-collection", controller,
+                "        names.add(\"second\");",
+                "        names.add(null);", "names.add(null)", true, "semantic"));
+
+        cases.add(new MutationCase("save-call-renamed", controller,
+                "        service.save(order);",
+                "        service.persist(order);", "service.persist", false, "clean"));
+
+        cases.add(new MutationCase("list-fully-qualified", controller,
+                "        List<String> names = new ArrayList<>();",
+                "        List<String> names = new java.util.ArrayList<>();",
+                "new java.util.ArrayList<>()", false, "clean"));
+
+        cases.add(new MutationCase("log-message-reworded", service,
+                "        log.info(\"audited order {}\", order.getName());",
+                "        log.info(\"audited order {} v2\", order.getName());",
+                "order {} v2", false, "clean"));
+
+        cases.add(new MutationCase("shipping-zone-multiplier", service,
+                "        int base = zone * 3;",
+                "        int base = zone * 4;", "zone * 4", true, "arithmetic"));
+
+        cases.add(new MutationCase("multiply-operands-swapped", price,
+                "            return quantity * 8;",
+                "            return 8 * quantity;", "8 * quantity", false, "clean"));
+
+        cases.add(new MutationCase("field-commented", service,
+                "    private final OrderRepository repository;",
+                "    private final OrderRepository repository; // wired once",
+                "// wired once", false, "clean"));
+
+        cases.add(new MutationCase("require-nonnull-dropped", repository,
+                "        this.root = Objects.requireNonNull(root);",
+                "        this.root = root;", "this.root = root;", true, "consistency"));
+
+        cases.add(new MutationCase("read-all-swallows-io", repository,
+                "        return Files.readAllLines(file);",
+                join("        try {",
+                        "            return Files.readAllLines(file);",
+                        "        } catch (IOException e) {",
+                        "            return List.of();",
+                        "        }"),
+                "catch (IOException e)", true, "exception"));
+
+        cases.add(new MutationCase("password-content-equals", auth,
+                "        return true;",
+                "        return user.contentEquals(password);",
+                "contentEquals", true, "security"));
+
+        cases.add(new MutationCase("submit-zone-parameter-dropped", controller,
+                "    public String submit(Order order, int zone) {",
+                "    public String submit(Order order) {",
+                "public String submit(Order order) {", true, "contract"));
+
+        cases.add(new MutationCase("line-total-guard-added", price,
+                "        return unitPrice * quantity;",
+                join("        if (quantity < 0) {",
+                        "            return 0;",
+                        "        }",
+                        "        return unitPrice * quantity;"),
+                "quantity < 0", false, "clean"));
+
+        cases.add(new MutationCase("list-method-commented", controller,
+                "    public List<String> list() {",
+                join("    // names in display order",
+                        "    public List<String> list() {"),
+                "// names in display order", false, "clean"));
+
+        cases.add(new MutationCase("unused-import-added", repository,
+                "import java.util.Objects;",
+                join("import java.util.Objects;", "import java.util.Map;"),
+                "import java.util.Map;", false, "clean"));
+
+        cases.add(new MutationCase("trailing-whitespace", controller,
+                "        return \"ok\";",
+                "        return \"ok\"; ", "return \"ok\";", false, "clean"));
+
+        cases.add(new MutationCase("tax-multiplied", price,
+                "        return amount - tax;",
+                "        return amount * tax;", "amount * tax", true, "arithmetic"));
+
+        cases.add(new MutationCase("guard-returning-zero", price,
+                "        if (quantity < 0) {",
+                "        if (quantity <= 0) {", "quantity <= 0", true, "boundary"));
+
+        return cases;
     }
 
     private static String join(String... lines) {
