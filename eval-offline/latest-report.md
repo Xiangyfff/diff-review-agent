@@ -6,13 +6,13 @@ Models: deterministic offline stand-ins
 
 | metric | value |
 |---|---|
-| triage unit recall | 88% (14/16) |
-| triage false positive rate | 17% (1/6) |
-| rule-gated recall (MUST, no model involved) | 81% (13/16) |
-| rule-gated false positives (MUST on clean changes) | 0% (0/6) |
-| end-to-end recall | 69% (11/16) |
-| findings | 18 |
-| kept / downgraded / dropped | 14 / 0 / 1 |
+| triage unit recall | 94% (15/16) |
+| triage false positive rate | 33% (2/6) |
+| rule-gated recall (MUST, no model involved) | 88% (14/16) |
+| rule-gated false positives (MUST on clean changes) | 17% (1/6) |
+| end-to-end recall | 75% (12/16) |
+| findings | 20 |
+| kept / downgraded / dropped | 16 / 0 / 1 |
 | duplicates merged | 3 |
 | invalid retractions | 0 |
 
@@ -34,11 +34,11 @@ Models: deterministic offline stand-ins
 | comment-added | clean | JUDGE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | - |
 | visibility-narrowed | contract | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
 | signature-changed | contract | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
-| statements-reordered | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
+| statements-reordered | clean | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | - |
 | auth-null-checks-removed | security | MUST_INVESTIGATE | 1 | 2 | 1 | 0 | 0 | 1 | 0 | yes |
 | boundary-off-by-one | boundary | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
 | negative-quantity-check-removed | validation | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
 | guard-kept-but-logged | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
 | case-insensitive-password | security | MUST_INVESTIGATE | 1 | 2 | 1 | 0 | 0 | 1 | 0 | yes |
 | password-logged | semantic-pii | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
-| validation-after-use | semantic-order | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | no |
+| validation-after-use | semantic-order | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |

@@ -72,6 +72,12 @@ final class BodyDelta {
             return;
         }
         Set<String> localNames = localNamesOf(before, after);
+        if (isPureReorder(oldStatements, newStatements, localNames)) {
+            changes.add(StructuralChange.exact(StructuralChange.Kind.STATEMENTS_REORDERED, line,
+                    "the same statements in a different order",
+                    before.toString(), after.toString()));
+            return;
+        }
         for (StatementSequenceDiff.Block block : StatementSequenceDiff.diff(oldStatements, newStatements, localNames)) {
             classify(block, line, changes);
         }
@@ -100,6 +106,25 @@ final class BodyDelta {
                     .forEach(clause -> names.add(clause.getParameter().getNameAsString()));
         }
         return names;
+    }
+
+    /**
+     * A reorder is not a no-op: side effects have an order, and a validation that moved after the
+     * write it was guarding is exactly the kind of bug no shape rule catches. Detecting it needs no
+     * tree diff, only the statement multisets: same statements, different sequence.
+     */
+    private static boolean isPureReorder(List<Statement> before, List<Statement> after, Set<String> localNames) {
+        if (before.size() != after.size() || before.size() < 2) {
+            return false;
+        }
+        List<String> left = before.stream().map(statement -> StatementNormalizer.normalize(statement, localNames)).sorted().toList();
+        List<String> right = after.stream().map(statement -> StatementNormalizer.normalize(statement, localNames)).sorted().toList();
+        if (!left.equals(right)) {
+            return false;
+        }
+        List<String> orderedLeft = before.stream().map(statement -> StatementNormalizer.normalize(statement, localNames)).toList();
+        List<String> orderedRight = after.stream().map(statement -> StatementNormalizer.normalize(statement, localNames)).toList();
+        return !orderedLeft.equals(orderedRight);
     }
 
     private static void classify(StatementSequenceDiff.Block block, int line, List<StructuralChange> changes) {
