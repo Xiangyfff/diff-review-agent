@@ -88,6 +88,7 @@
   .comment header { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
   .comment code { font-size: 12px; color: var(--muted); }
   .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  .note { margin-top: 4px; font-size: 12px; color: var(--muted); }
   .error {
     margin-top: 16px;
     padding: 10px 14px;
@@ -254,6 +255,14 @@ function render(data) {
       cell(String(unit.toolCalls)),
       cell(String(unit.findings))
     );
+    if (unit.abandoned && unit.abandoned.length) {
+      const note = document.createElement("div");
+      note.className = "note";
+      note.textContent = "未下结论：" + unit.abandoned.join("；");
+      const container = document.createElement("div");
+      container.append(note);
+      row.children[4].append(container);
+    }
     units.append(row);
   });
 

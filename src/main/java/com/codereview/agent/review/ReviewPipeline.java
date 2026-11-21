@@ -16,6 +16,7 @@ import com.codereview.agent.triage.index.IndexBuilder;
 import com.codereview.agent.triage.index.SymbolIndex;
 import com.codereview.agent.triage.parse.SourceParser;
 import com.codereview.agent.triage.plan.PlannedUnit;
+import com.codereview.agent.triage.tier.Tier;
 import com.codereview.agent.triage.plan.TriagePlan;
 import com.codereview.agent.verify.MockVerifier;
 import com.codereview.agent.verify.VerificationRequest;
@@ -139,7 +140,13 @@ public final class ReviewPipeline {
                         unit.category().name(), statusOf(verdict), finding.statement(),
                         finding.evidenceIds()));
             }
-            List<String> abandonReasons = result.abandoned().stream()
+            // A unit the rules insist on investigating must not end up silent just because the
+        // model gave up. Turn that outcome into a question the author can answer, and say
+        // plainly that the evidence never arrived.
+        if (result.findings().isEmpty() && unit.tier() == Tier.MUST_INVESTIGATE) {
+            comments.add(unverified(unit));
+        }
+        List<String> abandonReasons = result.abandoned().stream()
                     .map(abandoned -> abandoned.question() + " -> " + abandoned.reason())
                     .toList();
             outcomes.add(new UnitOutcome(unit.unit().file(), unit.unit().key(),
@@ -175,6 +182,22 @@ public final class ReviewPipeline {
                 + report.invalidRetractions() + " retractions without evidence, "
                 + report.merged() + " duplicates merged");
         System.out.println("written to " + output.toAbsolutePath());
+    }
+
+    private static Comment unverified(PlannedUnit unit) {
+        String rule = unit.ruleHits().isEmpty() ? unit.tierReason()
+                : "规则 " + unit.ruleHits().get(0).rule().id();
+        String body = "这里被判为必查（" + rule + "），但取证之后没有拿到能下结论的证据，"
+                + "所以留作问题：" + rationaleOf(unit);
+        return new Comment(unit.unit().file(), unit.unit().startLine(),
+                unit.category().name(), Comment.Status.QUESTION, body, List.of());
+    }
+
+    private static String rationaleOf(PlannedUnit unit) {
+        if (!unit.ruleHits().isEmpty()) {
+            return unit.ruleHits().get(0).rule().rationale();
+        }
+        return "请确认这次改动没有改变原有行为。";
     }
 
     private static Comment.Status statusOf(VerifyResult verdict) {

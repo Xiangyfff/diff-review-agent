@@ -1,5 +1,8 @@
 package com.codereview.agent.review;
 
+import com.codereview.agent.investigate.InvestigationModel;
+import com.codereview.agent.investigate.ModelTurn;
+
 import org.eclipse.jgit.api.Git;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,6 +97,67 @@ class ReviewPipelineTest {
             assertThat(comment.status()).isIn(Comment.Status.ASSERTION, Comment.Status.QUESTION);
             assertThat(report.renderMarkdown()).contains("## Comments");
             assertThat(report.renderJson()).contains("\"commentCount\"");
+        }
+    }
+
+    @Test
+    void aMustInvestigateUnitIsNeverSilentEvenWhenTheModelGivesUp() throws Exception {
+        try (Git git = Git.init().setDirectory(repository.toFile()).call()) {
+            write("src/main/java/shop/OrderService.java", """
+                    package shop;
+
+                    public class OrderService {
+
+                        private final OrderRepository repository;
+
+                        public OrderService(OrderRepository repository) {
+                            this.repository = repository;
+                        }
+
+                        public Order find(Order order) {
+                            if (order == null) {
+                                return null;
+                            }
+                            return repository.findByName(order.getName());
+                        }
+                    }
+                    """);
+            commit(git, "base");
+            String base = git.getRepository().resolve("HEAD").name();
+
+            write("src/main/java/shop/OrderService.java", """
+                    package shop;
+
+                    public class OrderService {
+
+                        private final OrderRepository repository;
+
+                        public OrderService(OrderRepository repository) {
+                            this.repository = repository;
+                        }
+
+                        public Order find(Order order) {
+                            return repository.findByName(order.getName());
+                        }
+                    }
+                    """);
+            commit(git, "remove the null check");
+            String head = git.getRepository().resolve("HEAD").name();
+
+            // A model that reads nothing and gives up on every question: the rules still said the
+            // unit must be investigated, so the report has to carry the reason to the reader.
+            InvestigationModel lazy = state -> new ModelTurn.Abandon("q1", "没有时间了");
+            ReviewPipeline pipeline = new ReviewPipeline(com.codereview.agent.triage.TriageService.offline(),
+                    lazy, new com.codereview.agent.verify.MockVerifier(),
+                    com.codereview.agent.investigate.InvestigateConfig.defaults(),
+                    com.codereview.agent.verify.VerifyConfig.defaults());
+
+            ReviewReport report = pipeline.run(repository, base, head);
+
+            assertThat(report.comments()).hasSize(1);
+            Comment comment = report.comments().get(0);
+            assertThat(comment.status()).isEqualTo(Comment.Status.QUESTION);
+            assertThat(comment.body()).contains("没有拿到能下结论的证据");
         }
     }
 
