@@ -118,6 +118,8 @@ public final class ReviewPipeline {
         int findings = 0;
         int dropped = 0;
         int invalidRetractions = 0;
+        int verified = 0;
+        int downgraded = 0;
         int merged = 0;
 
         if (depth == Depth.TRIAGE_ONLY) {
@@ -140,7 +142,8 @@ public final class ReviewPipeline {
                         List.of()));
             }
             return new ReviewReport(baseRevision, headRevision, plan.stats(), outcomes, comments,
-                    findings, dropped, invalidRetractions, merged, plan.screenedOut());
+                    findings, dropped, invalidRetractions, merged, plan.screenedOut(), verified,
+                    downgraded);
         }
 
         // The index is rebuilt here instead of being handed over by triage: triage owns its own
@@ -170,6 +173,10 @@ public final class ReviewPipeline {
                     verdict = verifierRunner.review(new VerificationRequest(finding, cited,
                             unit.unit().textBefore(), unit.unit().textAfter(), result.attempts()));
                     verifyCalls += verdict.toolCalls();
+                    verified++;
+                    if (verdict.disposition() == VerifyResult.Disposition.QUESTION) {
+                        downgraded++;
+                    }
                 }
                 if (verdict.invalid()) {
                     invalidRetractions++;
@@ -203,7 +210,8 @@ public final class ReviewPipeline {
                     result.toolCalls(), result.findings().size(), verifyCalls, abandonReasons));
         }
         return new ReviewReport(baseRevision, headRevision, plan.stats(), outcomes, comments,
-                findings, dropped, invalidRetractions, merged, plan.screenedOut());
+                findings, dropped, invalidRetractions, merged, plan.screenedOut(), verified,
+                downgraded);
     }
 
     public static void main(String[] args) throws Exception {

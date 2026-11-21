@@ -52,14 +52,14 @@ strong counter-evidence retracts.
 - [x] Verify — evidence-backed refutation, keep / downgrade / retract
 - [x] Evaluation — 22 mutation cases, report written to `eval/latest-report.md`
 - [x] Pipeline — triage → investigate → verify → comments, one command
-- [x] 120 tests, no network required
+- [x] 124 tests, no network required
 - [x] LangChain4j model adapter — one class imports the SDK, everything else speaks prompts and JSON
 - [x] Cheap gate for the judge tier — a small, shapeless change never reaches the model
 - [x] Real-model numbers (`deepseek-chat`, 22 cases; see the Evaluation table)
 - [x] Ablation across the three depths, written to `eval/latest-ablation.md`
 - [x] Token ledger — every run reports calls and tokens instead of assuming the cost
 - [x] Demo page — browse commits, review an edit made in the page, pick a depth, pull a screened file back in
-- [ ] GitHub App that posts the comments as a review
+- [x] Pull-request publishing — dry run by default, inline comments filtered to the diff
 - [ ] Split a unit that is too large at method boundaries
 
 ## Design notes
@@ -100,7 +100,7 @@ strong counter-evidence retracts.
 replays 22 mutations through the whole pipeline and writes `eval/latest-report.md` and
 `eval/latest-report.json`. Add `--real` to use the configured model instead of the stand-ins.
 
-Real model (`deepseek-chat`, temperature 0), latest run:
+Real model (`deepseek-chat`, temperature 0), latest run of 22 cases:
 
 | metric | value |
 |---|---|
@@ -108,9 +108,9 @@ Real model (`deepseek-chat`, temperature 0), latest run:
 | triage false positive rate | 17% (1/6) |
 | rule-gated recall (MUST, no model involved) | 88% (14/16) |
 | rule-gated false positives (MUST on clean changes) | 17% (1/6) |
-| end-to-end recall | 69% (11/16) |
-| findings | 14 |
-| kept / downgraded / dropped | 14 / 0 / 0 |
+| end-to-end recall | 81% (13/16) |
+| findings | 8 |
+| kept / downgraded / dropped | 5 / 10 / 0 |
 
 Offline stand-ins, same corpus:
 
@@ -165,25 +165,46 @@ it, because a one-line condition flip is exactly the small change that must not 
 ### Ablation: what each stage earns
 
 `AblationRunner` replays the same corpus at three depths — triage only, triage plus investigation,
-and the full pipeline — and writes `eval/latest-ablation.md`:
+and the full pipeline — and writes `eval/latest-ablation.md`. Real model (`deepseek-chat`):
 
-| depth | defects caught | clean changes flagged | comments | findings |
-|---|---|---|---|---|
-| triage only | 14/16 (88%) | 2/6 (33%) | 20 | 0 |
-| + investigation | 12/16 (75%) | 2/6 | 17 | 20 |
-| + verification (full) | 11/16 (69%) | 2/6 | 16 | 20 |
+| depth | defects caught | clean changes flagged | comments | findings | model calls | tokens |
+|---|---|---|---|---|---|---|
+| triage only | 13/16 (81%) | 1/6 (17%) | 21 | 0 | 39 | 17,290 |
+| + investigation | 13/16 (81%) | 1/6 (17%) | 15 | 9 | 85 | 70,812 |
+| + verification (full) | 13/16 (81%) | 1/6 (17%) | 16 | 12 | 101 | 88,379 |
 
-These are offline stand-in numbers and they are not flattering: the stand-in investigator adds
-constraints without adding evidence, because it concludes the same templated sentence every time.
-The point of the table is the shape, not the values — it is the thing that has to be re-run against a
-real model before any of these stages can be said to earn its cost. Triage-only posting every
-question as a comment is deliberately cheap and noisy; that is the baseline the other two rows are
-measured against.
+Recall does not move across the three rows, because it is decided in triage: if a unit is never
+scheduled, no later stage can rescue it. What the later stages buy is precision per comment — 21
+comments from triage alone, 16 after evidence and a critic, with the same defects covered. That is
+the trade to be argued about, so it is stated in the two numeric columns rather than in prose.
+
+The cost is not small: investigation takes the run from 17k to 71k tokens, verification adds another
+17k. Verification changed no verdict in this run, which is the honest state of that stage: it is
+implemented, it is cheap relative to investigation, and it has not yet earned its cost on this
+corpus. A critic that never changes anything is a cost with no measured benefit — the report prints
+`changedByCritic` precisely so that this stays visible instead of being inferred from a zero.
 
 To measure against a real model, set `CODEREVIEW_LLM_API_KEY` (and optionally
 `CODEREVIEW_LLM_BASE_URL`, `CODEREVIEW_LLM_MODEL`) and add `--real`; the harness itself is unchanged.
 Every run reports token usage through a process-wide ledger, so the cost of a stage is visible
 instead of assumed.
+
+## Posting to a pull request
+
+```
+java -cp "target/classes;<classpath>" com.codereview.agent.publish.PostReview \
+     <repository> <base> <head> <owner/name> <pull number> [--real] [--dry-run]
+```
+
+Dry run is the default: it prints the payload and writes `eval/latest-review-payload.json`.
+Posting needs `GITHUB_TOKEN` (fine-grained, pull-request write) and the explicit `--post` flag, so
+nothing writes to somebody's pull request by accident.
+
+GitHub only accepts an inline comment on a line the pull request changed, so the comments whose
+lines fall outside the diff are moved into the review body instead of being dropped — a review that
+silently swallows half its comments is worse than one that lists them. Every inline comment carries
+the evidence ids it cites as a footnote, which is the same gate the pipeline enforces before the
+publishing step ever runs.
 
 ## Demo
 
