@@ -108,7 +108,7 @@ final class BodyDelta {
         detectInvertedCondition(removed, added, line, changes, explained);
         detectSwallowedException(added, line, changes, explained);
         detectUnclosedResource(added, line, changes, explained);
-        detectRemovedEarlyExit(removed, line, changes, explained);
+        detectRemovedEarlyExit(removed, added, line, changes, explained);
 
         reportLeftovers(removed, added, explained, line, changes);
     }
@@ -333,8 +333,16 @@ final class BodyDelta {
 
     // ---- shape: an early exit that disappeared -----------------------------------------
 
-    private static void detectRemovedEarlyExit(List<Statement> removed, int line,
+    private static void detectRemovedEarlyExit(List<Statement> removed, List<Statement> added, int line,
                                                List<StructuralChange> changes, Set<Statement> explained) {
+        // A return swapped for another return is a rewrite, not a lost exit: the method still
+        // stops where it used to. Reporting it as a removed exit turns every rename inside a
+        // return into a control-flow change, and control-flow changes are not left to the model.
+        boolean exitStillThere = added.stream()
+                .anyMatch(statement -> statement instanceof ReturnStmt || statement instanceof ThrowStmt);
+        if (exitStillThere) {
+            return;
+        }
         for (Statement statement : removed) {
             if (statement instanceof ReturnStmt) {
                 changes.add(StructuralChange.exact(StructuralChange.Kind.EARLY_EXIT_REMOVED, line,

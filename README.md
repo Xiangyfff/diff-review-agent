@@ -87,13 +87,13 @@ Real model (`deepseek-chat`, temperature 0), latest run:
 
 | metric | value |
 |---|---|
-| triage unit recall | 64% (7/11) |
+| triage unit recall | 82% (9/11) |
 | triage false positive rate | 0% (0/5) |
-| rule-gated recall (MUST, no model involved) | 64% (7/11) |
+| rule-gated recall (MUST, no model involved) | 82% (9/11) |
 | rule-gated false positives (MUST on clean changes) | 0% (0/5) |
-| end-to-end recall | 27% (3/11) |
-| findings | 4 |
-| kept / downgraded / dropped | 4 / 0 / 0 |
+| end-to-end recall | 36% (4/11) |
+| findings | 5 |
+| kept / downgraded / dropped | 5 / 0 / 0 |
 
 Offline stand-ins, same corpus:
 
@@ -110,9 +110,15 @@ nearby — which is how one real defect (`resource-unclosed`) was dropped. Those
 model quality. The rule-gated rows are the part no model can influence, and they are identical in both
 runs.
 
-The real model is the opposite trade: it declines 4 of 7 judge-tier units (so recall falls to 64%) and
-it keeps the false-positive rate at zero. Its remaining losses are in investigation, where a unit
-usually yields one conclusion before the loop decides it has seen enough.
+The real model is the opposite trade: it declines judge-tier units it finds unremarkable, so recall
+depends on how much the program decides before the model is asked. Two families are now decided by the
+program rather than by a judgement: control-flow shapes (a flipped condition, a lost early exit) and
+deletions with nothing added in their place. That moved recall from 64% to 82% with the false-positive
+rate still at zero, because clean refactors do not produce those shapes. What is left is investigation:
+several MUST units still end with zero conclusions.
+
+One run of sixteen cases is one sample, not a measurement of the model — the same code re-run shifted
+end-to-end recall by nine points. Treat the rule-gated rows as the stable part and the rest as a trend.
 
 The cheap gate is what moved the false-positive rate from 100% to 60% without touching recall: a unit
 whose changed parts are all shapeless leftovers and whose diff is four lines or fewer is skipped

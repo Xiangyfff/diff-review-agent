@@ -55,9 +55,13 @@ public final class RuleCatalog {
                 "a closeable was acquired outside try-with-resources; whether it is closed later needs a look",
                 context -> context.has(StructuralChange.Kind.RESOURCE_UNCLOSED)));
 
-        defaults.add(new Rule("CONDITION-INVERTED", RiskCategory.LOGIC, false,
-                "a branch condition flipped; the guard that used to hold no longer does",
-                context -> context.has(StructuralChange.Kind.CONDITION_INVERTED)));
+        // Control flow is the one family where the shape itself says "this changes what the code
+        // does": the guard that used to hold no longer does, or a return that used to stop the
+        // method is gone. A model is not asked whether that deserves a look.
+        defaults.add(new Rule("CONTROL-FLOW-CHANGED", RiskCategory.LOGIC, true,
+                "control flow changed shape; the guard or the early exit that used to hold no longer does",
+                context -> context.has(StructuralChange.Kind.CONDITION_INVERTED)
+                        || context.has(StructuralChange.Kind.EARLY_EXIT_REMOVED)));
 
         defaults.add(new Rule("SENSITIVE-PATH", RiskCategory.SECURITY, true,
                 "the unit lives where auth, payment or migrations are handled",
@@ -68,7 +72,10 @@ public final class RuleCatalog {
                 context -> context.of(StructuralChange.Kind.MODIFIER_CHANGED).stream()
                         .anyMatch(change -> mentions(change, "synchronized") || mentions(change, "volatile"))));
 
-        defaults.add(new Rule("PURE-DELETION", RiskCategory.LOGIC, false,
+        // Deleting code without a replacement is the cheapest thing to recognise and the easiest
+        // to be wrong about: whatever the removed lines promised, nothing else now keeps the
+        // promise. Like control flow, this does not need a model's opinion.
+        defaults.add(new Rule("PURE-DELETION", RiskCategory.LOGIC, true,
                 "code was removed with nothing added in its place; the callers may still expect it",
                 context -> context.unit().removedLines() > 0 && context.unit().addedLines() == 0));
 
@@ -109,7 +116,8 @@ public final class RuleCatalog {
                     StructuralChange.Kind.UNIT_REMOVED);
             case "EXCEPTION-SWALLOWED" -> context.of(StructuralChange.Kind.SWALLOWED_EXCEPTION);
             case "RESOURCE-LEAK" -> context.of(StructuralChange.Kind.RESOURCE_UNCLOSED);
-            case "CONDITION-INVERTED" -> context.of(StructuralChange.Kind.CONDITION_INVERTED);
+            case "CONTROL-FLOW-CHANGED" -> union(context, StructuralChange.Kind.CONDITION_INVERTED,
+                    StructuralChange.Kind.EARLY_EXIT_REMOVED);
             case "CONCURRENCY-SEMANTICS" -> context.of(StructuralChange.Kind.MODIFIER_CHANGED);
             default -> List.of();
         };
