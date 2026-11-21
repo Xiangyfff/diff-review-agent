@@ -24,6 +24,9 @@ import com.github.javaparser.ast.stmt.TryStmt;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -109,8 +112,69 @@ final class BodyDelta {
         detectSwallowedException(added, line, changes, explained);
         detectUnclosedResource(added, line, changes, explained);
         detectRemovedEarlyExit(removed, added, line, changes, explained);
+        detectOperatorChange(removed, added, line, changes, explained);
 
         reportLeftovers(removed, added, explained, line, changes);
+    }
+
+    // ---- shape: the statement is the same except for an operator --------------------------
+
+    private static final List<String> OPERATORS = List.of(
+            ">>>", ">>=", "<<=", ">>>=", ">=", "<=", "==", "!=", "&&", "||",
+            "<<", ">>", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
+            ">", "<", "+", "-", "*", "/", "%", "&", "|", "^", "!");
+
+    private static final Pattern OPERATOR_TOKEN = Pattern.compile(
+            ">>>|>>=|<<=|>=|<=|==|!=|&&|\\|\\||<<|>>|\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|>|<|\\+|-|\\*|/|%|&|\\||\\^");
+
+    /**
+     * A comparison or arithmetic operator can change while the statement keeps the same shape:
+     * "quantity > 10" and "quantity >= 10" differ by one character and by one boundary bug. The
+     * tree comparison otherwise sees them as one deleted and one added statement, which is exactly
+     * the blind spot this check closes. Operators only: strings, numbers and names must match
+     * character for character once the operators are blanked out.
+     */
+    private static void detectOperatorChange(List<Statement> removed, List<Statement> added, int line,
+                                             List<StructuralChange> changes, Set<Statement> explained) {
+        for (Statement old : removed) {
+            if (explained.contains(old)) {
+                continue;
+            }
+            String oldShape = operatorShape(StatementNormalizer.normalize(old));
+            for (Statement now : added) {
+                if (explained.contains(now) || !oldShape.equals(operatorShape(StatementNormalizer.normalize(now)))) {
+                    continue;
+                }
+                Set<String> before = operatorsIn(StatementNormalizer.normalize(old));
+                Set<String> after = operatorsIn(StatementNormalizer.normalize(now));
+                if (before.equals(after)) {
+                    continue;
+                }
+                changes.add(StructuralChange.exact(StructuralChange.Kind.OPERATOR_CHANGED, line,
+                        "operator changed from " + before + " to " + after,
+                        old.toString(), now.toString()));
+                explained.add(old);
+                explained.add(now);
+                break;
+            }
+        }
+    }
+
+    private static String operatorShape(String text) {
+        String shape = text;
+        for (String operator : OPERATORS) {
+            shape = shape.replace(operator, "\u0001");
+        }
+        return shape;
+    }
+
+    private static Set<String> operatorsIn(String text) {
+        Set<String> found = new LinkedHashSet<>();
+        Matcher matcher = OPERATOR_TOKEN.matcher(text);
+        while (matcher.find()) {
+            found.add(matcher.group());
+        }
+        return found;
     }
 
     // ---- shape: a null guard that used to be here is gone ------------------------------

@@ -118,7 +118,33 @@ public final class EvalCorpus {
                 new MutationCase("auth-null-checks-removed", auth,
                         "        return user != null && password != null && user.equals(password);",
                         "        return user.equals(password);",
-                        "return user.equals(password);", true, "security"));
+                        "return user.equals(password);", true, "security"),
+
+                new MutationCase("boundary-off-by-one", price,
+                        "        boolean bulk = quantity > 10;",
+                        "        boolean bulk = quantity >= 10;",
+                        "boolean bulk = quantity >= 10;", true, "boundary"),
+
+                new MutationCase("negative-quantity-check-removed", price,
+                        join("        if (quantity < 0) {",
+                                "            throw new IllegalArgumentException(\"quantity must not be negative\");",
+                                "        }"),
+                        "", "return unitPrice * quantity;", true, "validation"),
+
+                new MutationCase("guard-kept-but-logged", service,
+                        join("        if (order == null) {",
+                                "            throw new IllegalArgumentException(\"order must not be null\");",
+                                "        }"),
+                        join("        if (order == null) {",
+                                "            log.warn(\"order is missing\");",
+                                "            throw new IllegalArgumentException(\"order must not be null\");",
+                                "        }"),
+                        "log.warn(\"order is missing\");", false, "clean"),
+
+                new MutationCase("case-insensitive-password", auth,
+                        "        return user.equals(password);",
+                        "        return user.equalsIgnoreCase(password);",
+                        "equalsIgnoreCase", true, "security"));
     }
 
     private static String join(String... lines) {
@@ -202,6 +228,13 @@ public final class EvalCorpus {
                 "    public int subtotal(int unitPrice, int quantity) {",
                 "        int total = unitPrice * quantity;",
                 "        return total;",
+                "    }",
+                "",
+                "    public int lineTotal(int unitPrice, int quantity) {",
+                "        if (quantity < 0) {",
+                "            throw new IllegalArgumentException(\"quantity must not be negative\");",
+                "        }",
+                "        return unitPrice * quantity;",
                 "    }",
                 "}");
     }

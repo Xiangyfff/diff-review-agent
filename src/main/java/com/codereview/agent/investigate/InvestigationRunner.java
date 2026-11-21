@@ -114,7 +114,7 @@ public final class InvestigationRunner {
                 Finding finding = new Finding(task.unitKey(), task.file(), conclude.line(),
                         conclude.statement(), conclude.evidenceIds());
                 FindingVerifier.Validation validation = verifier.verify(finding, store,
-                        task.line(), unitEndLine(task));
+                        task.line(), unitEndLine(task), task.before() + "\n" + task.after());
                 if (validation.ok()) {
                     remove(open, conclude.questionId());
                     findings.add(finding);

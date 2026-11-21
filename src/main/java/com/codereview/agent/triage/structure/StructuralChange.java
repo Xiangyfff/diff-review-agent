@@ -31,6 +31,7 @@ public record StructuralChange(
         RESOURCE_UNCLOSED,
         EARLY_EXIT_REMOVED,
         STATEMENTS_DELETED,
+        OPERATOR_CHANGED,
         STATEMENTS_ADDED,
         /** Changed outside any declaration: imports, class header, annotations on the type. */
         TYPE_LEVEL_CHANGED,

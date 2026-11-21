@@ -29,6 +29,17 @@ public final class FindingVerifier {
      * outside the unit still has to be covered by cited evidence.
      */
     public Validation verify(Finding finding, EvidenceStore store, int unitStart, int unitEnd) {
+        return verify(finding, store, unitStart, unitEnd, "");
+    }
+
+    /**
+     * The diff itself is trusted input, not model output: a conclusion about a removed annotation
+     * or a changed comparison must name the text that is no longer there, so symbols are accepted
+     * when they appear in the unit's own before/after text as well as in the cited evidence.
+     * Invented names still die, because neither source contains them.
+     */
+    public Validation verify(Finding finding, EvidenceStore store, int unitStart, int unitEnd,
+                             String trustedText) {
         if (finding.statement() == null || finding.statement().isBlank()) {
             return Validation.rejected("empty statement");
         }
@@ -53,12 +64,37 @@ public final class FindingVerifier {
             return Validation.rejected("line " + finding.line() + " is not covered by any cited evidence");
         }
         for (String symbol : backticked(finding.statement())) {
-            boolean seen = cited.stream().anyMatch(evidence -> evidence.mentions(symbol));
+            boolean seen = cited.stream().anyMatch(evidence -> mentionsAny(evidence, symbol))
+                    || mentionsInText(trustedText, symbol);
             if (!seen) {
                 return Validation.rejected("`" + symbol + "` does not appear in the cited evidence");
             }
         }
         return Validation.accepted();
+    }
+
+    private static boolean mentionsInText(String text, String symbol) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        return text.contains(symbol) || text.contains(bareName(symbol));
+    }
+
+    private static String bareName(String symbol) {
+        return symbol.replaceAll("\\s*\\([^)]*\\)\\s*$", "").trim();
+    }
+
+    /**
+     * A model writes symbols the way it reads them, which often includes the parameter list
+     * ("save(Order)") while the evidence holds the declaration ("public void save(Order order) {").
+     * Rejecting that is a false negative of our own gate, so the bare name is accepted too.
+     */
+    private static boolean mentionsAny(Evidence evidence, String symbol) {
+        if (evidence.mentions(symbol)) {
+            return true;
+        }
+        String bare = bareName(symbol);
+        return !bare.isEmpty() && !bare.equals(symbol) && evidence.mentions(bare);
     }
 
     static List<String> backticked(String statement) {

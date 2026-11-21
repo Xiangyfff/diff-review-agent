@@ -79,6 +79,7 @@ public final class MockTriageModel implements TriageModel {
             case TYPE_LEVEL_CHANGED -> "导入或类级注解的变化是否改变了这个类的契约？";
             case STATEMENTS_DELETED -> "被删除的语句是否承担了某个副作用？";
             case STATEMENTS_ADDED -> "新增的语句在什么条件下会执行？";
+            case OPERATOR_CHANGED -> "运算符改动之后，哪些输入的判断结果会与改动前不同？";
             case UNPARSED -> null;
         };
     }
