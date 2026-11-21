@@ -62,6 +62,19 @@ strong counter-evidence retracts.
 - [x] Pull-request publishing — dry run by default, inline comments filtered to the diff
 - [ ] Split a unit that is too large at method boundaries
 
+## Knowing when "nobody calls it" is not the answer
+
+A call graph that comes back empty is ambiguous: either nobody uses the method, or the callers live
+outside this checkout. The graph alone cannot tell the two apart, so the model used to abandon those
+questions and leave only a fallback. `public_surface` answers the missing half — a `public` method on
+a `public` type is reachable from outside, so an empty caller list says nothing about external
+callers and the change has to be raised as a confirmation instead of dropped.
+
+That one check moved evidence-backed recall from 50% to 65% on the same corpus, with no change to
+the triage stage and no extra model call. It is the cheapest improvement in the project: one
+syntactic look at the declaration's modifiers, and the loop stops treating "no caller" as "no
+problem".
+
 ## Calling the code, not the name
 
 `find_references` answers "which files mention this name", which is cheap and sometimes wrong:
@@ -127,18 +140,23 @@ Real model (`deepseek-chat`, temperature 0), latest run of 22 cases:
 
 | metric | value |
 | --- | --- |
-| cases | 48 (one since removed as not actually defective) |
-| triage recall | 75% (24/32) |
+| cases | 47 |
+| triage recall | 77% (24/31) |
 | false-positive rate on clean changes | 6% (1/16) |
-| findings | 17 |
-| kept / downgraded / dropped | 12 / 14 / 0 |
-| end-to-end recall, any comment near the line | 72% |
-| end-to-end recall, comment cites evidence | 50% |
+| findings | 25 |
+| kept / downgraded / dropped | 14 / 16 / 0 |
+| end-to-end recall, any comment near the line | 74% |
+| end-to-end recall, comment cites evidence | 65% |
 
-Widening the corpus from 22 to 48 cases cost recall: 88% became 75%. The new cases include
-behaviour changes no shape rule recognises (a swapped operand, a changed multiplier) and the model
-now declines more of them on the judging tier. That is the honest direction — a bigger corpus makes
-the number worse, not better.
+Widening the corpus cost recall: the earlier 22-case suite read 88%, this one reads 77%. The new
+cases include behaviour changes no shape rule recognises (a swapped operand, a changed multiplier),
+and the model declines more of them on the judging tier. A bigger corpus makes the number worse,
+which is the direction it should move.
+
+The two end-to-end rows are the same run. The wider one counts any comment within five lines of the
+injected defect, including the fallback question posted when a must-investigate unit ends without
+evidence. The narrower one counts only comments that cite evidence. Before the public-surface check
+below, those two rows read 72% and 50%; after it, 74% and 65%.
 
 Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
 every structural change, and the verifier stand-in retracts as soon as it reads a null check anywhere

@@ -4,6 +4,7 @@ import com.codereview.agent.investigate.tool.FindCallersTool;
 import com.codereview.agent.investigate.tool.FindDefinitionTool;
 import com.codereview.agent.investigate.tool.FindReferencesTool;
 import com.codereview.agent.investigate.tool.HistoryTool;
+import com.codereview.agent.investigate.tool.PublicSurfaceTool;
 import com.codereview.agent.investigate.tool.ReadLinesTool;
 import com.codereview.agent.investigate.tool.SearchTool;
 
@@ -39,6 +40,7 @@ public final class Toolbox {
                 cached(new FindDefinitionTool(repository)),
                 cached(new FindReferencesTool(repository)),
                 cached(new SearchTool(repository)),
+                cached(new PublicSurfaceTool(repository)),
                 cached(new HistoryTool(repository))));
     }
 
