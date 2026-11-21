@@ -1,0 +1,5 @@
+{
+  "body" : "**diff-review-agent** reviewed 390ee80c8dc51a6dea9a50ae97cc587b68557f66..13decca. 1 assertion(s), 0 question(s), 1 of them below because their lines are outside this diff.**\n\n- `src/main/java/com/example/order/OrderService.java:14` assertion — 改动附近的代码仍然直接使用了 `repository`，需要确认它在调用链上的取值来源。\n\n<sub>Every claim above cites evidence gathered from this repository. Comments that could not be backed by evidence were dropped before posting.</sub>",
+  "event" : "COMMENT",
+  "comments" : [ ]
+}

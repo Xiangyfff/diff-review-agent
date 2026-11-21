@@ -17,13 +17,30 @@ import java.util.List;
  */
 public record ReviewReport(String baseRevision, String headRevision, TriageStats stats,
         List<UnitOutcome> units, List<Comment> comments, int findings, int dropped,
-        int invalidRetractions, int merged, List<ScreenedFile> screenedOut) {
+        int invalidRetractions, int merged, List<ScreenedFile> screenedOut, int verified,
+        int downgraded) {
+
+    public ReviewReport(String baseRevision, String headRevision, TriageStats stats,
+            List<UnitOutcome> units, List<Comment> comments, int findings, int dropped,
+            int invalidRetractions, int merged, List<ScreenedFile> screenedOut) {
+        this(baseRevision, headRevision, stats, units, comments, findings, dropped,
+                invalidRetractions, merged, screenedOut, 0, 0);
+    }
 
     public ReviewReport(String baseRevision, String headRevision, TriageStats stats,
             List<UnitOutcome> units, List<Comment> comments, int findings, int dropped,
             int invalidRetractions, int merged) {
         this(baseRevision, headRevision, stats, units, comments, findings, dropped,
-                invalidRetractions, merged, List.of());
+                invalidRetractions, merged, List.of(), 0, 0);
+    }
+
+    /**
+     * How many findings the critic actually saw, and how many of those it changed its mind about.
+     * A critic that never changes anything is a cost with no measured benefit, and saying so is
+     * more useful than leaving the reader to infer it from a zero.
+     */
+    public int changedByCritic() {
+        return dropped + downgraded;
     }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -49,7 +66,9 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
                 .append(" | comments: ").append(comments.size())
                 .append(" (assertions ").append(assertions())
                 .append(", questions ").append(questions()).append(")")
+                .append(" | findings the critic saw: ").append(verified)
                 .append(" | findings rejected by the verifier: ").append(dropped)
+                .append(" | findings downgraded to questions: ").append(downgraded)
                 .append(" | retractions without evidence (kept): ").append(invalidRetractions)
                 .append(" | duplicates merged: ").append(merged)
                 .append("\n\n");
@@ -92,6 +111,9 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
         root.put("questions", questions());
         root.put("findings", findings);
         root.put("dropped", dropped);
+        root.put("verified", verified);
+        root.put("downgraded", downgraded);
+        root.put("changedByCritic", changedByCritic());
         root.put("invalidRetractions", invalidRetractions);
         root.put("merged", merged);
         ArrayNode skipped = root.putArray("screenedOut");

@@ -148,11 +148,18 @@ public final class EvalReport {
                 .append(downgraded()).append(" / ").append(dropped()).append(" |\n");
         text.append("| duplicates merged | ").append(merged()).append(" |\n");
         text.append("| invalid retractions | ").append(invalidRetractions()).append(" |\n\n");
-        text.append("> The offline stand-ins never decline. The triage stand-in raises a question "
-                + "for every structural change, so every clean case gets scheduled; the verifier "
-                + "stand-in retracts as soon as it reads a nearby null check, which is how a real "
-                + "defect was dropped below. These rows measure the wiring, not model quality. The "
-                + "rule-gated rows above are the part that does not depend on a model at all.\n\n");
+        if (models.contains("stand-in")) {
+            text.append("> The offline stand-ins never decline. The triage stand-in raises a question "
+                    + "for every structural change, so every clean case gets scheduled; the verifier "
+                    + "stand-in retracts as soon as it reads a nearby null check, which is how a real "
+                    + "defect was dropped below. These rows measure the wiring, not model quality. The "
+                    + "rule-gated rows above are the part that does not depend on a model at all.\n\n");
+        } else {
+            text.append("> `kept` counts assertions, `downgraded` counts comments demoted to "
+                    + "questions (by the critic, or because a must-investigate unit ended with no "
+                    + "evidence). A critic that never retracts is a cost with no measured benefit; "
+                    + "this table is what makes that visible.\n\n");
+        }
         text.append("| case | defective | tier | units | findings | kept | downgraded | dropped "
                 + "| merged | invalid | hit line |\n");
         text.append("|---|---|---|---|---|---|---|---|---|---|---|\n");
