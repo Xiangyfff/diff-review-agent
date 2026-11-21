@@ -52,7 +52,7 @@ strong counter-evidence retracts.
 - [x] Verify — evidence-backed refutation, keep / downgrade / retract
 - [x] Evaluation — 22 mutation cases, report written to `eval/latest-report.md`
 - [x] Pipeline — triage → investigate → verify → comments, one command
-- [x] 146 tests, no network required
+- [x] 150 tests, no network required
 - [x] LangChain4j model adapter — one class imports the SDK, everything else speaks prompts and JSON
 - [x] Cheap gate for the judge tier — a small, shapeless change never reaches the model
 - [x] Real-model numbers (`deepseek-chat`, 22 cases; see the Evaluation table)
