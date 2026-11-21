@@ -11,10 +11,13 @@ import java.util.List;
  * is handed, and only against the same budget as the investigator.
  */
 public record VerificationRequest(Finding finding, List<Evidence> cited, String unitBefore,
-        String unitAfter) {
+        String unitAfter,
+        /** One line per tool call the investigator already made; empty when unknown. */
+        List<String> attempts) {
 
     public VerificationRequest {
         cited = cited == null ? List.of() : List.copyOf(cited);
+        attempts = attempts == null ? List.of() : List.copyOf(attempts);
         unitBefore = unitBefore == null ? "" : unitBefore;
         unitAfter = unitAfter == null ? "" : unitAfter;
     }
@@ -34,6 +37,13 @@ public record VerificationRequest(Finding finding, List<Evidence> cited, String 
         }
         builder.append("\n这个单元改动前的代码：\n").append(unitBefore).append('\n');
         builder.append("这个单元改动后的代码：\n").append(unitAfter).append('\n');
+        if (!attempts.isEmpty()) {
+            builder.append("\n调查这条结论时已经做过的工具调用（包括什么都没查到的）：\n");
+            for (String attempt : attempts) {
+                builder.append("- ").append(attempt).append('\n');
+            }
+            builder.append("不要重复这些调用；要么换个角度找反证，要么直接给出裁决。\n");
+        }
         return builder.toString();
     }
 }

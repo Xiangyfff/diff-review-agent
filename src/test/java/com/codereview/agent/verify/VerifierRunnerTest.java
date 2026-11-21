@@ -47,7 +47,8 @@ class VerifierRunnerTest {
         return new VerificationRequest(FINDING,
                 List.of(new Evidence("ev-1", "read_lines", "A.java", 10, 12,
                         "12: value.length()")),
-                "void b() { value.length(); }", "void b() { value.length(); }");
+                "void b() { value.length(); }", "void b() { value.length(); }",
+                List.of("read_lines A.java:10-14 -> 1 excerpt(s)"));
     }
 
     @Test

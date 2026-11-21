@@ -19,7 +19,9 @@ public record InvestigationResult(
         int toolCalls,
         int turns,
         List<Evidence> evidence,
-        Outcome outcome) {
+        Outcome outcome,
+        /** One line per tool call, so the critic does not repeat what already failed. */
+        List<String> attempts) {
 
     public InvestigationResult {
         findings = findings == null ? List.of() : List.copyOf(findings);

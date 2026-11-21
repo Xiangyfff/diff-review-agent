@@ -15,10 +15,13 @@ public record InvestigationTask(
         String before,
         String after,
         List<String> changes,
-        List<String> questions) {
+        List<String> questions,
+        /** Name-level facts from triage, or an empty string when there are none. */
+        String facts) {
 
     public InvestigationTask {
         changes = changes == null ? List.of() : List.copyOf(changes);
         questions = questions == null ? List.of() : List.copyOf(questions);
+        facts = facts == null ? "" : facts;
     }
 }
