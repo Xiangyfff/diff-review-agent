@@ -178,9 +178,11 @@ public final class ReviewPipeline {
     }
 
     private static Comment.Status statusOf(VerifyResult verdict) {
-        return verdict.disposition() == VerifyResult.Disposition.QUESTION
-                ? Comment.Status.QUESTION
-                : Comment.Status.ASSERTION;
+        // A conclusion the investigator could not turn into a change request is a question for the
+        // author, not an assertion, no matter how confident the critic was that it holds.
+        boolean open = verdict.disposition() == VerifyResult.Disposition.QUESTION
+                || verdict.finding().asksForConfirmation();
+        return open ? Comment.Status.QUESTION : Comment.Status.ASSERTION;
     }
 
     private static InvestigationTask taskOf(PlannedUnit unit) {

@@ -112,7 +112,7 @@ public final class InvestigationRunner {
                     continue;
                 }
                 Finding finding = new Finding(task.unitKey(), task.file(), conclude.line(),
-                        conclude.statement(), conclude.evidenceIds());
+                        conclude.statement(), conclude.evidenceIds(), conclude.demand());
                 FindingVerifier.Validation validation = verifier.verify(finding, store,
                         task.line(), unitEndLine(task), task.before() + "\n" + task.after());
                 if (validation.ok()) {

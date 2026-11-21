@@ -80,6 +80,10 @@ strong counter-evidence retracts.
   name-level facts into the investigation prompt (marked as leads, never as verdicts), and
   investigation passes its own tool-call log into the critic's prompt, including the calls that
   found nothing, so the critic does not spend its four calls repeating them.
+- **A comment has to ask for something.** Every conclusion carries a demand: either `fix`
+  (something concrete is wrong here) or `confirm` (the author has to check something). A sentence
+  that only restates the diff is not a conclusion, and the verifier rejects a conclusion with no
+  demand at all; the prompt tells the model to abandon the question instead of filling the space.
 - **Running the tests is deliberately out of scope.** Executing the changed code would break the
   read-only boundary, needs a build of the target repository, and invites flaky failures. The
   evidence gate stops fabricated citations, which is the failure that matters for a comment; a

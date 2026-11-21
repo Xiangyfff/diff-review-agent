@@ -99,6 +99,15 @@ class FindingVerifierTest {
     }
 
     @Test
+    void rejectsAConclusionThatOnlyRestatesTheChange() {
+        Finding finding = new Finding("u1", "a/Login.java", 12, "签名发生了变化。", List.of("ev-1"),
+                "whatever");
+
+        assertThat(verifier.verify(finding, storeWithGuard()).ok()).isFalse();
+        assertThat(verifier.verify(finding, storeWithGuard()).reason()).contains("demand");
+    }
+
+    @Test
     void extractsEveryBacktickedSymbolInOrder() {
         assertThat(FindingVerifier.backticked("`a` 与 `b.c` 不一致"))
                 .containsExactly("a", "b.c");

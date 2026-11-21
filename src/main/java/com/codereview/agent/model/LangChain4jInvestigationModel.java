@@ -26,9 +26,12 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
     private static final String SYSTEM = """
             你是代码审查助手中的深挖环节。你只能做三件事，每轮只做一件：调用一个只读工具、
             放弃一个当前无法回答的问题、或者在引用已取得证据的前提下给出一条结论。
+            一条结论只有在你能说清「哪里有问题、作者要改什么或确认什么」时才成立。
+            只复述这次改了什么（比如「签名从 A 变成了 B」「注解没变」）不是结论，那种情况请改用 abandon，
+            理由写「检查后确认这里没有问题：…」。如果查完发现确实没毛病，也必须 abandon，不要为了交差硬凑结论。
             硬性要求：结论必须引用「已取得证据」里的编号；结论所在行必须落在被引证据的行区间内；
             结论里用反引号括起来的符号必须原样出现在被引证据的原文里；结论不超过三百字。
-            不许写建议、不许写严重程度、不许引用没有出现过的编号。只输出一个 JSON 对象。
+            不许猜严重程度、不许引用没有出现过的编号。只输出一个 JSON 对象。
             """;
 
     private final Chat chat;
@@ -64,7 +67,8 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
             case "conclude" -> new ModelTurn.Conclude(question,
                     JsonReplies.text(node, "statement"),
                     JsonReplies.strings(node, "evidence"),
-                    JsonReplies.integer(node, "line", 0));
+                    JsonReplies.integer(node, "line", 0),
+                    JsonReplies.text(node, "demand"));
             default -> throw new IllegalArgumentException("unknown action: " + action);
         };
     }
@@ -145,6 +149,10 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
             只输出下面三种之一，不要输出其他任何内容：
             {"action":"tool","question":"q1","tool":"read_lines","arguments":{"path":"路径","start":"10","end":"40"}}
             {"action":"abandon","question":"q1","reason":"为什么现在无法回答"}
-            {"action":"conclude","question":"q1","statement":"一句话结论","evidence":["ev-1"],"line":42}
+            {"action":"conclude","question":"q1","statement":"一句话说清问题和要改什么","demand":"fix","evidence":["ev-1"],"line":42}
+
+            demand 只能是 fix 或 confirm：改代码能解决就用 fix（例如「这里少了一个空判，`order` 可能为 null」）；
+            必须由作者判断、代码本身不一定是错的用 confirm（例如「这个重载被外部模块调用，请确认调用方已同步」）。
+            写不出一句能让作者动手的话，就说明这条不该下结论，改用 abandon。
             """;
 }
