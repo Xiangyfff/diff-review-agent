@@ -21,13 +21,16 @@ public record InvestigationState(
         int toolCallsUsed,
         int toolCallsLeft,
         /** Why the previous conclusion was rejected, or an empty string. */
-        String lastRejection) {
+        String lastRejection,
+        /** One line per tool call so far, including the ones that returned nothing. */
+        List<String> attempts) {
 
     public InvestigationState {
         changes = List.copyOf(changes);
         open = List.copyOf(open);
         evidence = List.copyOf(evidence);
         lastRejection = lastRejection == null ? "" : lastRejection;
+        attempts = attempts == null ? List.of() : List.copyOf(attempts);
     }
 
     public List<String> evidenceIds() {

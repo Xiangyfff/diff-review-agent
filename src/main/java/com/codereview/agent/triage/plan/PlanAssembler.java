@@ -87,12 +87,16 @@ public final class PlanAssembler {
      */
     private static FindingQuestion fallbackQuestion(Candidate candidate) {
         for (RuleHit hit : candidate.ruleHits()) {
-            if (hit.evidence().isEmpty()) {
-                continue;
+            // A rule can gate on a fact rather than on a shape ("this file handles auth", "code was
+            // deleted"). Those hits carry no evidence, and skipping them used to leave a unit
+            // scheduled with nothing to investigate: the loop opened, found an empty queue and
+            // reported a conclusion-free unit. The rule's own rationale is a usable question.
+            String target = candidate.unit().name();
+            if (!hit.evidence().isEmpty()) {
+                target = FindingQuestion.symbolIn(hit.evidence().get(0).detail(), target);
             }
-            StructuralChange change = hit.evidence().get(0);
-            String target = FindingQuestion.symbolIn(change.detail(), candidate.unit().name());
-            return new FindingQuestion(target, hit.rule().rationale() + "（规则 " + hit.rule().id() + " 触发的兜底问题）");
+            return new FindingQuestion(target,
+                    hit.rule().rationale() + "（规则 " + hit.rule().id() + " 触发的兜底问题）");
         }
         return null;
     }

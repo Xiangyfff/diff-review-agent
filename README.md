@@ -91,9 +91,9 @@ Real model (`deepseek-chat`, temperature 0), latest run:
 | triage false positive rate | 0% (0/5) |
 | rule-gated recall (MUST, no model involved) | 82% (9/11) |
 | rule-gated false positives (MUST on clean changes) | 0% (0/5) |
-| end-to-end recall | 36% (4/11) |
-| findings | 5 |
-| kept / downgraded / dropped | 5 / 0 / 0 |
+| end-to-end recall | 64% (7/11) |
+| findings | 9 |
+| kept / downgraded / dropped | 9 / 0 / 0 |
 
 Offline stand-ins, same corpus:
 
@@ -114,8 +114,11 @@ The real model is the opposite trade: it declines judge-tier units it finds unre
 depends on how much the program decides before the model is asked. Two families are now decided by the
 program rather than by a judgement: control-flow shapes (a flipped condition, a lost early exit) and
 deletions with nothing added in their place. That moved recall from 64% to 82% with the false-positive
-rate still at zero, because clean refactors do not produce those shapes. What is left is investigation:
-several MUST units still end with zero conclusions.
+rate still at zero, because clean refactors do not produce those shapes. Investigation used to lose the units it was given: two of them were
+scheduled with an empty question list (a rule that gates on a fact carries no shape evidence, and the
+fallback skipped those hits), and the loop could not tell that a tool call had already been made and
+returned nothing, so it retried the same call until the budget ran out. Both are fixed; what is left
+is two units whose conclusions pointed at lines the cited evidence does not cover.
 
 One run of sixteen cases is one sample, not a measurement of the model — the same code re-run shifted
 end-to-end recall by nine points. Treat the rule-gated rows as the stable part and the rest as a trend.

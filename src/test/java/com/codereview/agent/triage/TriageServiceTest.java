@@ -127,6 +127,37 @@ class TriageServiceTest {
     }
 
     @Test
+    void aUnitGatedByAFactStillGetsSomethingToInvestigate() {
+        // Sensitive path gates on where the code lives, not on a shape, so the rule hit carries no
+        // evidence. A model that answers with nothing used to leave this unit scheduled with an
+        // empty question list, which the loop then reported as a conclusion-free unit.
+        TriageModel silent = new TriageModel() {
+            @Override
+            public UnitAssessment assess(UnitPrompt prompt) {
+                return UnitAssessment.declining("nothing to ask");
+            }
+
+            @Override
+            public IntentSummary summarize(ChangeOverview overview) {
+                return IntentSummary.empty();
+            }
+        };
+        String before = "class LoginService {\n    void login(String name) {\n        log(name);\n    }\n}\n";
+        String after = "class LoginService {\n    void login(String name) {\n        log(name);\n        audit(name);\n    }\n}\n";
+        FileChange change = new FileChange("src/main/java/com/shop/auth/LoginService.java",
+                "src/main/java/com/shop/auth/LoginService.java", ChangeType.MODIFIED,
+                List.of(new FileChange.EditRange(3, 3, 3, 4)), before, after);
+
+        TriagePlan plan = new TriageService(silent, TriageConfig.defaults())
+                .triage(List.of(change), "base", "head");
+
+        PlannedUnit unit = plan.units().get(0);
+        assertThat(unit.tier()).isEqualTo(Tier.MUST_INVESTIGATE);
+        assertThat(unit.questions()).isNotEmpty();
+        assertThat(unit.syntheticQuestions()).isTrue();
+    }
+
+    @Test
     void statsAddUp() {
         TriagePlan plan = TriageService.offline().triage(
                 List.of(nullGuardRemoval("src/main/java/com/shop/auth/A.java")), "base", "head");
