@@ -222,6 +222,31 @@ whose changed parts are all shapeless leftovers and whose diff is four lines or 
 without a model call. It is deliberately conservative — any rule hit, mandatory or advisory, wins over
 it, because a one-line condition flip is exactly the small change that must not be waved through.
 
+### What the gate was letting through
+
+The evaluation measures the units the program chose to investigate. It cannot see what the program
+threw away, so a sample of the skipped units was reviewed anyway at full depth (`SamplingSweep`,
+100% rate, one round per seed). Of the seven defects the gate had skipped, five were found with
+evidence-backed comments in one round, and a smaller three-case sweep found two of three. Every miss
+was a real defect, not a near miss: a magic number turned `9` into `8`, a bulk price multiplied by
+`100` instead of `10`, `return "not found"` became `return null`, a list gained a `null` element, and
+a constructor lost its `Objects.requireNonNull`. The gate had not been wrong about "small"; it had
+been wrong to read "small" as "safe". Results are in `eval/latest-sampling.md`.
+
+Two shapes now catch that class without a model call: `LITERAL-CHANGED` (statements that are the
+same once literals are blanked, but whose literals differ — a number, a message, a returned value)
+and `NULL-ARGUMENT` (an added call passing a null literal). A removed guard is also recognised when
+it was an assignment of a checked value (`this.root = Objects.requireNonNull(root)`). Re-probing the
+seven skipped defects offline, six now reach must-investigate before any model is asked; the
+remaining one is a SQL string concatenation, which changes statement shape rather than a literal and
+is recorded as a known gap.
+
+The cost is measurable and small: of the sixteen clean cases, four became scheduled. Two are
+judge-tier and the model still declines them for free, one is a pure statement reorder (promoted to
+mandatory on purpose, and it stops at the investigation stage with no comment), and one was a false
+positive — rewording a log message. That one is fixed: a literal change inside a logging call is now
+recorded as an edit and never gates work.
+
 ### Ablation: what each stage earns
 
 `AblationRunner` replays the same corpus at three depths — triage only, triage plus investigation,
