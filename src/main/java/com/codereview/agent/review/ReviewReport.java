@@ -98,6 +98,8 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
             node.put("toolCalls", unit.toolCalls());
             node.put("findings", unit.findings());
             node.put("verifyCalls", unit.verifyCalls());
+            ArrayNode abandoned = node.putArray("abandoned");
+            unit.abandoned().forEach(abandoned::add);
         }
 
         ArrayNode commentNodes = root.putArray("comments");
