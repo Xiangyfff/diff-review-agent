@@ -27,6 +27,26 @@ class BodyDeltaTest {
     }
 
     @Test
+    void aChangedComparisonOperatorIsItsOwnShape() {
+        List<StructuralChange> changes = compare(
+                "void m(int quantity) { boolean bulk = quantity > 10; use(bulk); }",
+                "void m(int quantity) { boolean bulk = quantity >= 10; use(bulk); }");
+
+        assertThat(kinds(changes)).containsExactly(StructuralChange.Kind.OPERATOR_CHANGED);
+        assertThat(changes.get(0).confidence()).isEqualTo(StructuralChange.Confidence.EXACT);
+        assertThat(changes.get(0).detail()).contains(">=").contains(">");
+    }
+
+    @Test
+    void aChangedNumberIsNotAnOperatorChange() {
+        List<StructuralChange> changes = compare(
+                "void m(int quantity) { boolean bulk = quantity > 10; use(bulk); }",
+                "void m(int quantity) { boolean bulk = quantity > 20; use(bulk); }");
+
+        assertThat(kinds(changes)).doesNotContain(StructuralChange.Kind.OPERATOR_CHANGED);
+    }
+
+    @Test
     void removingANullGuardIsReportedAsItsOwnShape() {
         List<StructuralChange> changes = compare(
                 "void m(String x) { if (x == null) { return; } use(x); }",

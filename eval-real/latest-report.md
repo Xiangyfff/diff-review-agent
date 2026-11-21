@@ -1,18 +1,18 @@
 # Code review agent — evaluation
 
-Corpus: 16 mutations, 11 of them introduce a known defect, 5 are clean refactors.
+Corpus: 20 mutations, 14 of them introduce a known defect, 6 are clean refactors.
 
 Models: deepseek-chat at https://api.deepseek.com/v1
 
 | metric | value |
 |---|---|
-| triage unit recall | 64% (7/11) |
-| triage false positive rate | 0% (0/5) |
-| rule-gated recall (MUST, no model involved) | 64% (7/11) |
-| rule-gated false positives (MUST on clean changes) | 0% (0/5) |
-| end-to-end recall | 9% (1/11) |
-| findings | 1 |
-| kept / downgraded / dropped | 1 / 0 / 0 |
+| triage unit recall | 86% (12/14) |
+| triage false positive rate | 0% (0/6) |
+| rule-gated recall (MUST, no model involved) | 86% (12/14) |
+| rule-gated false positives (MUST on clean changes) | 0% (0/6) |
+| end-to-end recall | 64% (9/14) |
+| findings | 11 |
+| kept / downgraded / dropped | 11 / 0 / 0 |
 | duplicates merged | 0 |
 | invalid retractions | 0 |
 
@@ -20,19 +20,23 @@ Models: deepseek-chat at https://api.deepseek.com/v1
 
 | case | defective | tier | units | findings | kept | downgraded | dropped | merged | invalid | hit line |
 |---|---|---|---|---|---|---|---|---|---|---|
-| null-guard-removed | null-guard | MUST_INVESTIGATE | 1 | 0 | 0 | 0 | 0 | 0 | 0 | no |
-| exception-swallowed | exception | MUST_INVESTIGATE | 1 | 0 | 0 | 0 | 0 | 0 | 0 | no |
-| early-exit-removed | early-exit | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | no |
+| null-guard-removed | null-guard | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| exception-swallowed | exception | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| early-exit-removed | early-exit | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | no |
 | annotation-removed | contract | MUST_INVESTIGATE | 1 | 0 | 0 | 0 | 0 | 0 | 0 | no |
 | log-line-added | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
-| condition-inverted | condition | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | no |
-| synchronized-added | concurrency | MUST_INVESTIGATE | 1 | 0 | 0 | 0 | 0 | 0 | 0 | no |
+| condition-inverted | condition | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| synchronized-added | concurrency | MUST_INVESTIGATE | 1 | 2 | 2 | 0 | 0 | 0 | 0 | yes |
 | local-renamed | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
 | constant-extracted | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
 | resource-unclosed | resource | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | no |
 | query-concatenated | injection | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | no |
 | comment-added | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
-| visibility-narrowed | contract | MUST_INVESTIGATE | 1 | 0 | 0 | 0 | 0 | 0 | 0 | no |
-| signature-changed | contract | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| visibility-narrowed | contract | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| signature-changed | contract | MUST_INVESTIGATE | 1 | 0 | 0 | 0 | 0 | 0 | 0 | no |
 | statements-reordered | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
-| auth-null-checks-removed | security | MUST_INVESTIGATE | 1 | 0 | 0 | 0 | 0 | 0 | 0 | no |
+| auth-null-checks-removed | security | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| boundary-off-by-one | boundary | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| negative-quantity-check-removed | validation | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| guard-kept-but-logged | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
+| case-insensitive-password | security | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |

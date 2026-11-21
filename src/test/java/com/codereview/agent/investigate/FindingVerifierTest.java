@@ -67,6 +67,31 @@ class FindingVerifierTest {
     }
 
     @Test
+    void acceptsASymbolWrittenWithItsParameterList() {
+        EvidenceStore store = new EvidenceStore();
+        store.add("read_lines", "a/OrderService.java", 20, 22, "20: public void save(Order order) {\n21:     validate(order);");
+        Finding finding = new Finding("u1", "a/OrderService.java", 21,
+                "`save(Order)` 不再带事务注解，异常回滚行为会变。", List.of("ev-1"));
+
+        FindingVerifier.Validation result = verifier.verify(finding, store);
+
+        assertThat(result.ok()).isTrue();
+    }
+
+    @Test
+    void acceptsASymbolThatOnlyTheDiffStillMentions() {
+        EvidenceStore store = new EvidenceStore();
+        store.add("read_lines", "a/OrderService.java", 20, 21, "20: public void save(Order order) {\n21:     validate(order);");
+        Finding finding = new Finding("u1", "a/OrderService.java", 21,
+                "`@Transactional` 被移除了，异常时不会再回滚。", List.of("ev-1"));
+
+        FindingVerifier.Validation result = verifier.verify(finding, store, 20, 21,
+                "@Transactional\npublic void save(Order order) {\n    validate(order);");
+
+        assertThat(result.ok()).isTrue();
+    }
+
+    @Test
     void rejectsAFindingWithNoEvidenceAtAll() {
         Finding finding = new Finding("u1", "a/Login.java", 12, "看起来有问题。", List.of());
 

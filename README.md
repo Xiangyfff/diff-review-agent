@@ -80,28 +80,28 @@ strong counter-evidence retracts.
 ## Evaluation
 
 `mvn -q compile` then `java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner`
-replays 16 mutations through the whole pipeline and writes `eval/latest-report.md` and
+replays 20 mutations through the whole pipeline and writes `eval/latest-report.md` and
 `eval/latest-report.json`. Add `--real` to use the configured model instead of the stand-ins.
 
 Real model (`deepseek-chat`, temperature 0), latest run:
 
 | metric | value |
 |---|---|
-| triage unit recall | 82% (9/11) |
-| triage false positive rate | 0% (0/5) |
-| rule-gated recall (MUST, no model involved) | 82% (9/11) |
-| rule-gated false positives (MUST on clean changes) | 0% (0/5) |
-| end-to-end recall | 64% (7/11) |
-| findings | 9 |
-| kept / downgraded / dropped | 9 / 0 / 0 |
+| triage unit recall | 86% (12/14) |
+| triage false positive rate | 0% (0/6) |
+| rule-gated recall (MUST, no model involved) | 86% (12/14) |
+| rule-gated false positives (MUST on clean changes) | 0% (0/6) |
+| end-to-end recall | 64% (9/14) |
+| findings | 11 |
+| kept / downgraded / dropped | 11 / 0 / 0 |
 
 Offline stand-ins, same corpus:
 
 | metric | value |
 |---|---|
-| triage unit recall | 100% (11/11) |
-| triage false positive rate | 60% (3/5) |
-| end-to-end recall | 73% (8/11) |
+| triage unit recall | 93% (13/14) |
+| triage false positive rate | 17% (1/6) |
+| end-to-end recall | 71% (10/14) |
 | kept / downgraded / dropped | 13 / 0 / 1 |
 
 Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
@@ -109,6 +109,14 @@ every structural change, and the verifier stand-in retracts as soon as it reads 
 nearby — which is how one real defect (`resource-unclosed`) was dropped. Those rows measure wiring, not
 model quality. The rule-gated rows are the part no model can influence, and they are identical in both
 runs.
+
+Two of the new cases were added precisely because the first expanded run missed them, and each
+exposed a real gap. A boundary bug (`> 10` becoming `>= 10`) changed no shape the detector knew, so
+`OPERATOR-CHANGED` now compares statements with their operators blanked out and fires when only the
+operator differs. And the verification gate rejected correct conclusions that named removed code
+(`@Transactional`, `quantity > 10`): those strings cannot appear in the evidence, because the change
+took them away. Symbols are now also accepted from the unit's own before/after text — the diff is
+trusted input, the model is not — so invented names still die while conclusions about removals live.
 
 The real model is the opposite trade: it declines judge-tier units it finds unremarkable, so recall
 depends on how much the program decides before the model is asked. Two families are now decided by the

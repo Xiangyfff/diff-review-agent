@@ -63,6 +63,10 @@ public final class RuleCatalog {
                 context -> context.has(StructuralChange.Kind.CONDITION_INVERTED)
                         || context.has(StructuralChange.Kind.EARLY_EXIT_REMOVED)));
 
+        defaults.add(new Rule("OPERATOR-CHANGED", RiskCategory.LOGIC, true,
+                "a comparison or arithmetic operator changed, which is where boundary bugs live",
+                context -> context.has(StructuralChange.Kind.OPERATOR_CHANGED)));
+
         defaults.add(new Rule("SENSITIVE-PATH", RiskCategory.SECURITY, true,
                 "the unit lives where auth, payment or migrations are handled",
                 context -> SENSITIVE_PATH.matcher(context.path()).find()));
