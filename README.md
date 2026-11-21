@@ -158,6 +158,18 @@ To measure against a real model, set `CODEREVIEW_LLM_API_KEY` (and optionally
 `CODEREVIEW_LLM_BASE_URL`, `CODEREVIEW_LLM_MODEL`) and run `ReviewPipeline` instead of the offline
 stand-ins; the harness itself is unchanged.
 
+## Demo
+
+```
+mvn -q compile
+java -cp "target/classes;<classpath>" com.codereview.agent.web.DemoServer
+```
+
+Open <http://127.0.0.1:8099/>, paste a repository path and two revisions, and the page shows the
+units it chose, the tier and outcome of each, and the comments that survived verification. The
+server binds to loopback only, and by default it uses the offline stand-ins so a click costs
+nothing; start it with `--real` to call the configured model instead.
+
 ## Build
 
 ```bash

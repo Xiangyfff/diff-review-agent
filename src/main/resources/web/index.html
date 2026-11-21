@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>代码审查智能体 · 演示</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1f2328;
+    --muted: #656d76;
+    --line: #d8dee4;
+    --bg: #ffffff;
+    --soft: #f6f8fa;
+    --accent: #0969da;
+    --ok: #1a7f37;
+    --warn: #9a6700;
+    --bad: #cf222e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto;
+    max-width: 1040px;
+    padding: 32px 20px 64px;
+    font: 15px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 32px 0 10px; }
+  p.lead { color: var(--muted); margin: 0 0 24px; }
+  form {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr auto;
+    gap: 10px;
+    align-items: end;
+    padding: 16px;
+    background: var(--soft);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  input {
+    width: 100%;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+  }
+  button {
+    padding: 9px 18px;
+    font: inherit;
+    font-size: 13px;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: default; }
+  .hint { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .cards { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .card {
+    flex: 1 1 120px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  .card b { display: block; font-size: 22px; font-weight: 600; }
+  .card span { font-size: 12px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; }
+  .tier { font-size: 11px; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+  .must { background: #ffebe9; color: var(--bad); }
+  .judge { background: #fff8c5; color: var(--warn); }
+  .skip { background: var(--soft); color: var(--muted); }
+  .comment {
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+  }
+  .comment.question { border-left-color: var(--warn); }
+  .comment header { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .comment code { font-size: 12px; color: var(--muted); }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  .error {
+    margin-top: 16px;
+    padding: 10px 14px;
+    border: 1px solid #ffcecb;
+    border-radius: 6px;
+    background: #ffebe9;
+    color: var(--bad);
+    font-size: 13px;
+    white-space: pre-wrap;
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<h1>代码审查智能体</h1>
+<p class="lead">输入仓库路径和两个提交，看它把哪些改动判为必查、挖到了什么证据、最后为什么只留下这几条评论。</p>
+
+<form id="form">
+  <div>
+    <label for="repository">仓库路径</label>
+    <input id="repository" name="repository" value="E:\dsh-try\repos\spring-petclinic">
+  </div>
+  <div>
+    <label for="base">起始提交</label>
+    <input id="base" name="base" value="0d064b0">
+  </div>
+  <div>
+    <label for="head">结束提交</label>
+    <input id="head" name="head" value="500158f">
+  </div>
+  <div><button id="run" type="submit">开始审查</button></div>
+</form>
+<div class="hint" id="modeHint">正在确认模型…</div>
+
+<div id="error" class="error" hidden></div>
+
+<section id="result" hidden>
+  <div class="cards" id="cards"></div>
+
+  <h2>分析单元</h2>
+  <table>
+    <thead>
+      <tr><th>文件</th><th>单元</th><th>档位</th><th>风险类别</th><th>结局</th><th>工具调用</th><th>结论</th></tr>
+    </thead>
+    <tbody id="units"></tbody>
+  </table>
+
+  <h2>评论</h2>
+  <div id="comments"></div>
+</section>
+
+<script>
+const tierNames = { MUST_INVESTIGATE: "必查", JUDGE: "待判断", SKIP: "跳过" };
+const tierClass = { MUST_INVESTIGATE: "must", JUDGE: "judge", SKIP: "skip" };
+const outcomeNames = {
+  CONCLUDED: "出了结论",
+  TOOL_BUDGET_EXHAUSTED: "工具预算用尽",
+  TURN_BUDGET_EXHAUSTED: "回合用尽",
+  MAX_FINDINGS_REACHED: "结论数到顶",
+  STALLED: "几轮没有新信息",
+  MODEL_FAILED: "模型调用失败"
+};
+const categoryNames = {
+  SECURITY: "安全", CONCURRENCY: "并发", RESOURCE: "资源", CONSISTENCY: "一致性",
+  CONTRACT: "契约", LOGIC: "逻辑", DOCS: "文档"
+};
+
+const modeHint = document.getElementById("modeHint");
+fetch("/api/mode").then((r) => r.json()).then((mode) => {
+  const offline = (mode.models || "").includes("offline");
+  modeHint.textContent = offline
+    ? "当前是离线假模型：流程真实，但结论文本是模板，用来演示「有没有被拦下」，不代表审查质量。"
+    : "当前是 " + mode.models + "：每次点按钮都会真的调用模型，会产生费用。";
+}).catch(() => {
+  modeHint.textContent = "无法确认模型模式，仍可以直接审查。";
+});
+
+const form = document.getElementById("form");
+const runButton = document.getElementById("run");
+const errorBox = document.getElementById("error");
+const result = document.getElementById("result");
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  errorBox.hidden = true;
+  result.hidden = true;
+  runButton.disabled = true;
+  runButton.textContent = "审查中…";
+  try {
+    const response = await fetch("/api/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        repository: document.getElementById("repository").value,
+        base: document.getElementById("base").value,
+        head: document.getElementById("head").value
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || ("HTTP " + response.status));
+    }
+    render(data);
+  } catch (e) {
+    errorBox.textContent = e.message;
+    errorBox.hidden = false;
+  } finally {
+    runButton.disabled = false;
+    runButton.textContent = "开始审查";
+  }
+});
+
+function render(data) {
+  const cards = document.getElementById("cards");
+  cards.innerHTML = "";
+  [
+    ["单元", data.units],
+    ["评论", data.comments],
+    ["断言", data.assertions],
+    ["疑问", data.questions],
+    ["被丢弃", data.dropped],
+    ["耗时", data.durationMs + " ms"]
+  ].forEach(([label, value]) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    const number = document.createElement("b");
+    number.textContent = value;
+    const name = document.createElement("span");
+    name.textContent = label;
+    card.append(number, name);
+    cards.append(card);
+  });
+
+  const units = document.getElementById("units");
+  units.innerHTML = "";
+  if (!data.unitOutcomes.length) {
+    units.innerHTML = '<tr><td colspan="7" class="empty">这个区间没有可审查的改动。</td></tr>';
+  }
+  data.unitOutcomes.forEach((unit) => {
+    const row = document.createElement("tr");
+    const cell = (text) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      return td;
+    };
+    const tier = document.createElement("span");
+    tier.className = "tier " + (tierClass[unit.tier] || "skip");
+    tier.textContent = tierNames[unit.tier] || unit.tier;
+    const tierCell = document.createElement("td");
+    tierCell.append(tier);
+    row.append(
+      cell(unit.file),
+      cell(unit.unitKey),
+      tierCell,
+      cell(categoryNames[unit.riskCategory] || unit.riskCategory),
+      cell(outcomeNames[unit.outcome] || unit.outcome),
+      cell(String(unit.toolCalls)),
+      cell(String(unit.findings))
+    );
+    units.append(row);
+  });
+
+  const comments = document.getElementById("comments");
+  comments.innerHTML = "";
+  if (!data.comments.length) {
+    comments.innerHTML = '<p class="empty">没有评论：要么没深挖，要么挖到的结论没通过证据校验。</p>';
+  }
+  data.comments.forEach((comment) => {
+    const box = document.createElement("div");
+    box.className = "comment" + (comment.status === "QUESTION" ? " question" : "");
+    const head = document.createElement("header");
+    head.textContent = comment.file + ":" + comment.line + " · "
+      + (categoryNames[comment.riskCategory] || comment.riskCategory) + " · "
+      + (comment.status === "QUESTION" ? "疑问" : "断言");
+    const body = document.createElement("div");
+    body.textContent = comment.body;
+    box.append(head, body);
+    if (comment.evidence?.length) {
+      const evidence = document.createElement("code");
+      evidence.textContent = "证据：" + comment.evidence.join("、");
+      box.append(evidence);
+    }
+    comments.append(box);
+  });
+
+  result.hidden = false;
+}
+</script>
+</body>
+</html>
