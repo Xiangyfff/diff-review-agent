@@ -1,6 +1,7 @@
 package com.codereview.agent.review;
 
 import com.codereview.agent.triage.plan.TriageStats;
+import com.codereview.agent.triage.screen.ScreenedFile;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -16,7 +17,14 @@ import java.util.List;
  */
 public record ReviewReport(String baseRevision, String headRevision, TriageStats stats,
         List<UnitOutcome> units, List<Comment> comments, int findings, int dropped,
-        int invalidRetractions, int merged) {
+        int invalidRetractions, int merged, List<ScreenedFile> screenedOut) {
+
+    public ReviewReport(String baseRevision, String headRevision, TriageStats stats,
+            List<UnitOutcome> units, List<Comment> comments, int findings, int dropped,
+            int invalidRetractions, int merged) {
+        this(baseRevision, headRevision, stats, units, comments, findings, dropped,
+                invalidRetractions, merged, List.of());
+    }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -86,6 +94,12 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
         root.put("dropped", dropped);
         root.put("invalidRetractions", invalidRetractions);
         root.put("merged", merged);
+        ArrayNode skipped = root.putArray("screenedOut");
+        for (ScreenedFile file : screenedOut) {
+            ObjectNode node = skipped.addObject();
+            node.put("path", file.path());
+            node.put("reason", file.reason());
+        }
 
         ArrayNode unitNodes = root.putArray("unitOutcomes");
         for (UnitOutcome unit : units) {

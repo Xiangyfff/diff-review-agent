@@ -116,7 +116,11 @@ class ReviewToolsTest {
 
         assertThat(outcome.ok()).isTrue();
         assertThat(outcome.summary()).contains("2 file(s)");
-        assertThat(outcome.excerpts().get(0).text()).contains("a/Login.java").contains("a/Caller.java");
+        // The file list is only a fallback now; the useful answer is the matching lines themselves.
+        assertThat(outcome.excerpts()).anySatisfy(excerpt ->
+                assertThat(excerpt.file()).isEqualTo("a/Caller.java"));
+        assertThat(outcome.excerpts()).anySatisfy(excerpt ->
+                assertThat(excerpt.file()).isEqualTo("a/Login.java"));
     }
 
     @Test

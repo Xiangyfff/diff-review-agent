@@ -3,6 +3,8 @@ package com.codereview.agent.web;
 import com.codereview.agent.eval.CorpusRepository;
 import com.codereview.agent.investigate.InvestigateConfig;
 import com.codereview.agent.model.ReviewModels;
+import com.codereview.agent.model.TokenLedger;
+import com.codereview.agent.review.Depth;
 import com.codereview.agent.review.ReviewPipeline;
 import com.codereview.agent.review.ReviewReport;
 import com.codereview.agent.verify.VerifyConfig;
@@ -307,12 +309,31 @@ public final class DemoServer {
             if (!Files.isDirectory(path)) {
                 throw new IllegalArgumentException("不是目录：" + repository);
             }
+            Depth depth = Depth.parse(text(request, "depth"));
+            JsonNode includeNode = request.get("include");
+            List<String> include = new ArrayList<>();
+            if (includeNode != null && includeNode.isArray()) {
+                includeNode.forEach(node -> {
+                    String value = node.asText("").strip();
+                    if (!value.isEmpty()) {
+                        include.add(value);
+                    }
+                });
+            }
             long started = System.nanoTime();
-            ReviewReport report = pipeline.run(path, base, head);
+            TokenLedger.reset();
+            ReviewReport report = pipeline.run(path, base, head, depth, include);
+            TokenLedger.Snapshot tokens = TokenLedger.snapshot();
             ObjectNode body = (ObjectNode) MAPPER.readTree(report.renderJson());
             body.put("repository", repository);
             body.put("models", pipeline.modelDescription());
+            body.put("depth", depth.name());
             body.put("durationMs", (System.nanoTime() - started) / 1_000_000);
+            ObjectNode usage = body.putObject("tokens");
+            usage.put("calls", tokens.calls());
+            usage.put("input", tokens.inputTokens());
+            usage.put("output", tokens.outputTokens());
+            usage.put("total", tokens.totalTokens());
             send(exchange, 200, "application/json; charset=utf-8", body.toPrettyString());
         } catch (IllegalArgumentException e) {
             answer.put("error", e.getMessage());
