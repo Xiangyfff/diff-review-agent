@@ -66,7 +66,7 @@ class TierPolicyTest {
     }
 
     @Test
-    void anAdvisoryRuleBeatsTheGate() {
+    void aRecognisedShapeBeatsTheGate() {
         AnalysisUnit unit = unit(1, 1, """
                 boolean ready(Order order) {
                     return order.isPaid();
@@ -82,8 +82,32 @@ class TierPolicyTest {
 
         TierPolicy.Decision decision = decide(unit, changes);
 
-        assertThat(decision.tier()).isEqualTo(Tier.JUDGE);
+        assertThat(decision.tier()).isEqualTo(Tier.MUST_INVESTIGATE);
         assertThat(TierPolicy.isCheapGate(decision.reason())).isFalse();
+        assertThat(decision.category()).isEqualTo(RiskCategory.LOGIC);
+    }
+
+    @Test
+    void aRemovedEarlyExitIsInvestigatedWithoutAskingTheModel() {
+        AnalysisUnit unit = unit(1, 1, """
+                String name(Order order) {
+                    if (order == null) {
+                        return "unknown";
+                    }
+                    return order.name();
+                }
+                """, """
+                String name(Order order) {
+                    return order.name();
+                }
+                """);
+        List<StructuralChange> changes = List.of(StructuralChange.exact(
+                StructuralChange.Kind.EARLY_EXIT_REMOVED, 10, "a return was removed",
+                "return \"unknown\";", ""));
+
+        TierPolicy.Decision decision = decide(unit, changes);
+
+        assertThat(decision.tier()).isEqualTo(Tier.MUST_INVESTIGATE);
         assertThat(decision.category()).isEqualTo(RiskCategory.LOGIC);
     }
 

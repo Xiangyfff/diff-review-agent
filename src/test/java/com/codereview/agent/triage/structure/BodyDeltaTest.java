@@ -99,4 +99,21 @@ class BodyDeltaTest {
     void identicalBodiesProduceNothing() {
         assertThat(compare("void m() { a(); b(); }", "void m() { a(); b(); }")).isEmpty();
     }
+
+    @Test
+    void aReturnSwappedForAnotherReturnIsNotALostExit() {
+        List<StructuralChange> changes = compare(
+                """
+                int size(List<String> items) {
+                    return items.size();
+                }
+                """,
+                """
+                int size(List<String> items) {
+                    return items.size() * 2;
+                }
+                """);
+
+        assertThat(kinds(changes)).doesNotContain(StructuralChange.Kind.EARLY_EXIT_REMOVED);
+    }
 }
