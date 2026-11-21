@@ -2,14 +2,12 @@ package com.codereview.agent.eval;
 
 import com.codereview.agent.review.ReviewPipeline;
 import com.codereview.agent.review.ReviewReport;
-import org.eclipse.jgit.api.Git;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -25,44 +23,20 @@ public final class EvalRunner {
     private EvalRunner() {
     }
 
-    public static EvalReport run(Path workspace) throws Exception {
-        return run(workspace, ReviewPipeline.offline());
-    }
-
-    /**
-     * @param pipeline the exact pipeline under test, so the offline stand-ins and a real model are
-     *                 measured by the same harness rather than by two slightly different ones
-     */
     public static EvalReport run(Path workspace, ReviewPipeline pipeline) throws Exception {
-        prepare(workspace);
-        try (Git git = Git.init().setDirectory(workspace.toFile()).call()) {
-            Map<String, String> files = EvalCorpus.baseFiles();
-            for (Map.Entry<String, String> file : files.entrySet()) {
-                write(workspace, file.getKey(), file.getValue());
-            }
-            commit(git, "base");
-            String base = head(git);
+        CorpusRepository.Corpus corpus = CorpusRepository.build(workspace);
+        Map<String, MutationCase> cases = new java.util.HashMap<>();
+        EvalCorpus.cases().forEach(mutation -> cases.put(mutation.id(), mutation));
 
-            List<CaseOutcome> outcomes = new ArrayList<>();
-            for (MutationCase mutation : EvalCorpus.cases()) {
-                String current = Files.readString(workspace.resolve(mutation.path()),
-                        StandardCharsets.UTF_8);
-                int occurrences = count(current, mutation.search());
-                if (occurrences != 1) {
-                    throw new IllegalStateException("case " + mutation.id() + " expects exactly one "
-                            + "occurrence of its search text but found " + occurrences);
-                }
-                String mutated = current.replace(mutation.search(), mutation.replace());
-                write(workspace, mutation.path(), mutated);
-                int anchorLine = mutation.anchor() == null ? 0 : lineOf(mutated, mutation.anchor());
-                commit(git, mutation.id());
-                String head = head(git);
-
-                outcomes.addAll(analyse(pipeline, workspace, base, head, mutation, anchorLine));
-                base = head;
-            }
-            return new EvalReport(outcomes, pipeline.modelDescription());
+        List<CaseOutcome> outcomes = new ArrayList<>();
+        String base = corpus.base();
+        for (CorpusRepository.Commit commit : corpus.commits()) {
+            MutationCase mutation = cases.get(commit.caseId());
+            outcomes.addAll(analyse(pipeline, workspace, base, commit.commitId(), mutation,
+                    commit.anchorLine()));
+            base = commit.commitId();
         }
+        return new EvalReport(outcomes, pipeline.modelDescription());
     }
 
     public static void main(String[] args) throws Exception {
@@ -104,79 +78,5 @@ public final class EvalRunner {
                 report.units().size(), tier, report.findings(), report.assertions(),
                 report.questions(), report.dropped(), report.merged(),
                 report.invalidRetractions(), lineMatched, anchorLine));
-    }
-
-    private static void prepare(Path workspace) throws IOException {
-        if (Files.exists(workspace)) {
-            try (var walk = Files.walk(workspace)) {
-                walk.sorted(Comparator.reverseOrder()).forEach(path -> {
-                    try {
-                        deleteQuietly(path);
-                    } catch (IOException failure) {
-                        throw new IllegalStateException("cannot clean " + path, failure);
-                    }
-                });
-            }
-        }
-        Files.createDirectories(workspace);
-    }
-
-    /**
-     * Git objects are marked read-only on Windows, which makes a plain delete fail with
-     * AccessDeniedException. Clearing the attribute first is the cheapest way to reuse a corpus
-     * directory between runs.
-     */
-    private static void deleteQuietly(Path path) throws IOException {
-        if (!Files.exists(path)) {
-            return;
-        }
-        path.toFile().setWritable(true);
-        if (Files.isDirectory(path)) {
-            path.toFile().setReadable(true);
-            path.toFile().setExecutable(true);
-        }
-        Files.deleteIfExists(path);
-    }
-
-    private static void write(Path root, String path, String content) throws IOException {
-        Path target = root.resolve(path);
-        Files.createDirectories(target.getParent());
-        Files.writeString(target, content, StandardCharsets.UTF_8);
-    }
-
-    private static void commit(Git git, String message) throws Exception {
-        git.add().addFilepattern(".").call();
-        git.commit().setMessage(message).setAllowEmpty(false).call();
-    }
-
-    private static String head(Git git) throws Exception {
-        return git.getRepository().resolve("HEAD").name();
-    }
-
-    private static int count(String text, String needle) {
-        int occurrences = 0;
-        int from = 0;
-        while (true) {
-            int index = text.indexOf(needle, from);
-            if (index < 0) {
-                return occurrences;
-            }
-            occurrences++;
-            from = index + 1;
-        }
-    }
-
-    private static int lineOf(String text, String anchor) {
-        int index = text.indexOf(anchor);
-        if (index < 0) {
-            throw new IllegalStateException("anchor is not present after the mutation: " + anchor);
-        }
-        int line = 1;
-        for (int i = 0; i < index; i++) {
-            if (text.charAt(i) == '\n') {
-                line++;
-            }
-        }
-        return line;
     }
 }
