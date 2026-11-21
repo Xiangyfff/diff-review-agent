@@ -1,5 +1,6 @@
 package com.codereview.agent.web;
 
+import com.codereview.agent.eval.CorpusRepository;
 import com.codereview.agent.investigate.InvestigateConfig;
 import com.codereview.agent.model.ReviewModels;
 import com.codereview.agent.review.ReviewPipeline;
@@ -32,8 +33,10 @@ public final class DemoServer {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final int DEFAULT_PORT = 8099;
+    private static final String DEMO_CASE = "null-guard-removed";
 
     private final ReviewPipeline pipeline;
+    private CorpusRepository.Corpus corpus;
 
     public DemoServer(ReviewPipeline pipeline) {
         this.pipeline = pipeline;
@@ -65,6 +68,7 @@ public final class DemoServer {
         server.createContext("/", this::handlePage);
         server.createContext("/api/review", this::handleReview);
         server.createContext("/api/mode", this::handleMode);
+        server.createContext("/api/defaults", this::handleDefaults);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         server.start();
         return server;
@@ -90,6 +94,33 @@ public final class DemoServer {
         ObjectNode answer = MAPPER.createObjectNode();
         answer.put("models", pipeline.modelDescription());
         send(exchange, 200, "application/json; charset=utf-8", answer.toString());
+    }
+
+    /**
+     * The page opens on something worth looking at: a corpus commit that removes a null check, so
+     * the first click shows a real finding instead of an empty range. The corpus is built on demand
+     * because the first request is also the first time we know the page is actually being used.
+     */
+    private void handleDefaults(HttpExchange exchange) throws IOException {
+        ObjectNode answer = MAPPER.createObjectNode();
+        try {
+            CorpusRepository.Corpus ready = corpus();
+            answer.put("repository", ready.workspace().toAbsolutePath().toString());
+            answer.put("base", ready.base());
+            answer.put("head", ready.commitOf(DEMO_CASE));
+            answer.put("case", DEMO_CASE);
+            send(exchange, 200, "application/json; charset=utf-8", answer.toString());
+        } catch (Exception e) {
+            answer.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+            send(exchange, 500, "application/json; charset=utf-8", answer.toString());
+        }
+    }
+
+    private synchronized CorpusRepository.Corpus corpus() throws Exception {
+        if (corpus == null) {
+            corpus = CorpusRepository.build(Path.of("target", "eval-corpus"));
+        }
+        return corpus;
     }
 
     private void handleReview(HttpExchange exchange) throws IOException {

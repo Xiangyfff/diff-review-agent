@@ -109,15 +109,15 @@
 <form id="form">
   <div>
     <label for="repository">仓库路径</label>
-    <input id="repository" name="repository" value="E:\dsh-try\repos\spring-petclinic">
+    <input id="repository" name="repository" value="">
   </div>
   <div>
     <label for="base">起始提交</label>
-    <input id="base" name="base" value="0d064b0">
+    <input id="base" name="base" value="">
   </div>
   <div>
     <label for="head">结束提交</label>
-    <input id="head" name="head" value="500158f">
+    <input id="head" name="head" value="">
   </div>
   <div><button id="run" type="submit">开始审查</button></div>
 </form>
@@ -157,6 +157,12 @@ const categoryNames = {
 };
 
 const modeHint = document.getElementById("modeHint");
+fetch("/api/defaults").then((r) => r.json()).then((d) => {
+  if (d.error) { return; }
+  document.getElementById("repository").value = d.repository;
+  document.getElementById("base").value = d.base;
+  document.getElementById("head").value = d.head;
+}).catch(() => {});
 fetch("/api/mode").then((r) => r.json()).then((mode) => {
   const offline = (mode.models || "").includes("offline");
   modeHint.textContent = offline
