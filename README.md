@@ -126,30 +126,19 @@ replays 22 mutations through the whole pipeline and writes `eval/latest-report.m
 Real model (`deepseek-chat`, temperature 0), latest run of 22 cases:
 
 | metric | value |
-|---|---|
-| triage unit recall | 88% (14/16) |
-| triage false positive rate | 17% (1/6) |
-| rule-gated recall (MUST, no model involved) | 88% (14/16) |
-| rule-gated false positives (MUST on clean changes) | 17% (1/6) |
-| end-to-end recall, any comment near the line | 81% (13/16) |
-| end-to-end recall, comment cites evidence | 50% (8/16) |
-| findings | 10 |
-| kept / downgraded / dropped | 7 / 9 / 0 |
+| --- | --- |
+| cases | 48 (one since removed as not actually defective) |
+| triage recall | 75% (24/32) |
+| false-positive rate on clean changes | 6% (1/16) |
+| findings | 17 |
+| kept / downgraded / dropped | 12 / 14 / 0 |
+| end-to-end recall, any comment near the line | 72% |
+| end-to-end recall, comment cites evidence | 50% |
 
-Offline stand-ins, same corpus:
-
-| metric | value |
-|---|---|
-| triage unit recall | 94% (15/16) |
-| triage false positive rate | 33% (2/6) |
-| end-to-end recall | 75% (12/16) |
-| kept / downgraded / dropped | 16 / 0 / 1 |
-
-The gap between the two end-to-end rows is the most important number here. When a
-must-investigate unit ends without evidence, the pipeline still posts a question pointing at the
-right place — useful to a reviewer, but not a detection. Counting those as hits would have reported
-81% and the stricter row reports 50%. Both are printed because the second one is the claim that
-survives a hostile reader.
+Widening the corpus from 22 to 48 cases cost recall: 88% became 75%. The new cases include
+behaviour changes no shape rule recognises (a swapped operand, a changed multiplier) and the model
+now declines more of them on the judging tier. That is the honest direction — a bigger corpus makes
+the number worse, not better.
 
 Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
 every structural change, and the verifier stand-in retracts as soon as it reads a null check anywhere
