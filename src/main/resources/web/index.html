@@ -180,8 +180,11 @@
       </details>
     </section>
     <section class="panel">
-      <h2>被筛除的文件（这里可以把它强行拉回审查）</h2>
-      <div id="screened"></div>
+      <details class="fold" id="screenedFold">
+        <summary>被筛除的文件<span id="screenedCount" class="note"></span></summary>
+        <div class="note" style="margin-bottom:8px">被筛掉的文件可以强行拉回审查。</div>
+        <div id="screened"></div>
+      </details>
     </section>
 
     <section class="panel">
@@ -235,6 +238,7 @@ function tokenCaption(tokens) {
 }
 
 function renderScreened(files) {
+  $("screenedCount").textContent = files.length ? `（${files.length}）` : "";
   if (include.length) {
     $("screened").innerHTML = `<div class="note" style="margin-bottom:8px">已强制纳入：${include.map(escapeHtml).join("、")}
       <button class="ghost" id="clearInclude" style="margin-left:8px">清除</button></div>`;
