@@ -76,8 +76,10 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
         ObjectNode root = MAPPER.createObjectNode();
         root.put("baseRevision", baseRevision);
         root.put("headRevision", headRevision);
-        root.put("units", units.size());
-        root.put("comments", comments.size());
+        // Counts and lists need different names: the lists below would otherwise overwrite
+        // the numbers, and a client reading a number would find an array.
+        root.put("unitCount", units.size());
+        root.put("commentCount", comments.size());
         root.put("assertions", assertions());
         root.put("questions", questions());
         root.put("findings", findings);

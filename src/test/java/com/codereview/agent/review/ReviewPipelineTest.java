@@ -93,7 +93,7 @@ class ReviewPipelineTest {
             assertThat(comment.riskCategory()).isEqualTo("CONSISTENCY");
             assertThat(comment.status()).isIn(Comment.Status.ASSERTION, Comment.Status.QUESTION);
             assertThat(report.renderMarkdown()).contains("## Comments");
-            assertThat(report.renderJson()).contains("\"comments\"");
+            assertThat(report.renderJson()).contains("\"commentCount\"");
         }
     }
 
