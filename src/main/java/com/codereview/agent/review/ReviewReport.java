@@ -18,13 +18,22 @@ import java.util.List;
 public record ReviewReport(String baseRevision, String headRevision, TriageStats stats,
         List<UnitOutcome> units, List<Comment> comments, int findings, int dropped,
         int invalidRetractions, int merged, List<ScreenedFile> screenedOut, int verified,
-        int downgraded) {
+        int downgraded, Sampling.Summary sampling) {
+
+    public ReviewReport(String baseRevision, String headRevision, TriageStats stats,
+            List<UnitOutcome> units, List<Comment> comments, int findings, int dropped,
+            int invalidRetractions, int merged, List<ScreenedFile> screenedOut, int verified,
+            int downgraded) {
+        this(baseRevision, headRevision, stats, units, comments, findings, dropped,
+                invalidRetractions, merged, screenedOut, verified, downgraded,
+                Sampling.Summary.none());
+    }
 
     public ReviewReport(String baseRevision, String headRevision, TriageStats stats,
             List<UnitOutcome> units, List<Comment> comments, int findings, int dropped,
             int invalidRetractions, int merged, List<ScreenedFile> screenedOut) {
         this(baseRevision, headRevision, stats, units, comments, findings, dropped,
-                invalidRetractions, merged, screenedOut, 0, 0);
+                invalidRetractions, merged, screenedOut, 0, 0, Sampling.Summary.none());
     }
 
     public ReviewReport(String baseRevision, String headRevision, TriageStats stats,
@@ -71,7 +80,11 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
                 .append(" | findings downgraded to questions: ").append(downgraded)
                 .append(" | retractions without evidence (kept): ").append(invalidRetractions)
                 .append(" | duplicates merged: ").append(merged)
-                .append("\n\n");
+                .append("\n");
+        if (sampling.rate() > 0) {
+            out.append(sampling.describe()).append('\n');
+        }
+        out.append('\n');
 
         if (!units.isEmpty()) {
             out.append("| file | unit | tier | category | outcome | tool calls | findings |\n");
@@ -84,6 +97,7 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
                         .append(" | ").append(unit.outcome())
                         .append(" | ").append(unit.toolCalls())
                         .append(" | ").append(unit.findings())
+                        .append(unit.sampled() ? " (抽查)" : "")
                         .append(" |\n");
             }
             out.append('\n');
@@ -116,6 +130,14 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
         root.put("changedByCritic", changedByCritic());
         root.put("invalidRetractions", invalidRetractions);
         root.put("merged", merged);
+        ObjectNode samplingNode = root.putObject("sampling");
+        samplingNode.put("rate", sampling.rate());
+        samplingNode.put("percent", Math.round(sampling.rate() * 100));
+        samplingNode.put("candidates", sampling.candidates());
+        samplingNode.put("sampled", sampling.sampled());
+        samplingNode.put("withFindings", sampling.withFindings());
+        samplingNode.put("estimate", Math.round(sampling.estimate() * 1000) / 1000.0);
+        samplingNode.put("summary", sampling.describe());
         ArrayNode skipped = root.putArray("screenedOut");
         for (ScreenedFile file : screenedOut) {
             ObjectNode node = skipped.addObject();
@@ -134,6 +156,7 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
             node.put("toolCalls", unit.toolCalls());
             node.put("findings", unit.findings());
             node.put("verifyCalls", unit.verifyCalls());
+            node.put("sampled", unit.sampled());
             ArrayNode abandoned = node.putArray("abandoned");
             unit.abandoned().forEach(abandoned::add);
         }

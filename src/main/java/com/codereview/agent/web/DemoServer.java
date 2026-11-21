@@ -6,6 +6,7 @@ import com.codereview.agent.model.ReviewModels;
 import com.codereview.agent.model.TokenLedger;
 import com.codereview.agent.review.Depth;
 import com.codereview.agent.review.ReviewPipeline;
+import com.codereview.agent.review.Sampling;
 import com.codereview.agent.review.ReviewReport;
 import com.codereview.agent.verify.VerifyConfig;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -320,14 +321,17 @@ public final class DemoServer {
                     }
                 });
             }
+            double samplePercent = number(request, "sample", 0.0);
             long started = System.nanoTime();
             TokenLedger.reset();
-            ReviewReport report = pipeline.run(path, base, head, depth, include);
+            ReviewReport report = pipeline.sampling(Sampling.percent(samplePercent))
+                    .run(path, base, head, depth, include);
             TokenLedger.Snapshot tokens = TokenLedger.snapshot();
             ObjectNode body = (ObjectNode) MAPPER.readTree(report.renderJson());
             body.put("repository", repository);
             body.put("models", pipeline.modelDescription());
             body.put("depth", depth.name());
+            body.put("samplePercent", samplePercent);
             body.put("durationMs", (System.nanoTime() - started) / 1_000_000);
             ObjectNode usage = body.putObject("tokens");
             usage.put("calls", tokens.calls());
@@ -342,6 +346,18 @@ public final class DemoServer {
             answer.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
             send(exchange, 500, "application/json; charset=utf-8", answer.toString());
         }
+    }
+
+    private static double number(JsonNode request, String field, double fallback) {
+        JsonNode node = request.get(field);
+        if (node == null || node.isNull()) {
+            return fallback;
+        }
+        double value = node.isNumber() ? node.asDouble() : Double.parseDouble(node.asText("0"));
+        if (value < 0 || value > 100) {
+            throw new IllegalArgumentException("抽查比例必须在 0 到 100 之间");
+        }
+        return value;
     }
 
     private static String text(JsonNode request, String field) {

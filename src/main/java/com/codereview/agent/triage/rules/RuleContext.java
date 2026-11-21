@@ -1,5 +1,6 @@
 package com.codereview.agent.triage.rules;
 
+import com.codereview.agent.triage.staticanalysis.StaticWarning;
 import com.codereview.agent.triage.structure.StructuralChange;
 import com.codereview.agent.triage.unit.AnalysisUnit;
 
@@ -8,10 +9,25 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /** Everything a rule is allowed to look at. Rules never call a model and never parse. */
-public record RuleContext(AnalysisUnit unit, List<StructuralChange> changes) {
+public record RuleContext(AnalysisUnit unit, List<StructuralChange> changes,
+        List<StaticWarning> warnings) {
+
+    public RuleContext(AnalysisUnit unit, List<StructuralChange> changes) {
+        this(unit, changes, List.of());
+    }
 
     public RuleContext {
         changes = List.copyOf(changes);
+        warnings = warnings == null ? List.of() : List.copyOf(warnings);
+    }
+
+    public boolean warned() {
+        return !warnings.isEmpty();
+    }
+
+    public List<StaticWarning> warningsOf(String... kinds) {
+        java.util.Set<String> wanted = java.util.Set.of(kinds);
+        return warnings.stream().filter(warning -> wanted.contains(warning.kind())).toList();
     }
 
     public String path() {

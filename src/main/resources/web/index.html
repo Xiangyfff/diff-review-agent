@@ -131,6 +131,10 @@
           <option value="TRIAGE_ONLY">只做初审</option>
         </select>
       </div>
+      <div class="tight">
+        <label for="sample">抽查比例（%）</label>
+        <input type="number" id="sample" min="0" max="100" step="5" value="0">
+      </div>
       <div class="tight"><button id="review">开始审查</button></div>
     </div>
     <div class="hint" id="modeHint">正在确认模型…</div>
@@ -170,6 +174,9 @@
     </section>
 
     <section class="panel">
+      <h2>抽查（初审放行的单元随机复核）</h2>
+      <div id="sampling"><div class="empty">未开启抽查。</div></div>
+
       <h2>评论</h2>
       <div id="comments"></div>
     </section>
@@ -197,6 +204,16 @@ function showError(message) {
   $("cards").innerHTML = "";
   box.innerHTML = `<div class="error">${message}</div>`;
   $("comments").innerHTML = "";
+}
+
+function samplingCaption(sampling) {
+  if (!sampling || !sampling.rate) {
+    return "未开启";
+  }
+  if (!sampling.sampled) {
+    return "未抽中";
+  }
+  return `${sampling.sampled} 个 · ${Math.round(sampling.estimate * 100)}%`;
 }
 
 function tokenCaption(tokens) {
@@ -323,6 +340,7 @@ function review() {
     base: $("base").value.trim(),
     head: $("head").value.trim(),
     depth: $("depth").value,
+    sample: Number($("sample").value || 0),
     include: include
   };
   lastRun = payload;
@@ -348,11 +366,13 @@ function render(data) {
     card(data.assertions, "需修改"),
     card(data.questions, "待确认"),
     card(data.dropped, "被丢弃"),
+    card(samplingCaption(data.sampling), "抽查"),
     card(tokenCaption(data.tokens), "模型消耗"),
     card(data.durationMs + " ms", "耗时")
   ].join("");
 
   renderScreened(data.screenedOut || []);
+  renderSampling(data.sampling);
 
   if (!data.unitOutcomes.length) {
     $("units").innerHTML = '<div class="empty">该区间没有可审查的改动。</div>';
@@ -367,7 +387,7 @@ function render(data) {
         <td>${categoryLabel(unit.riskCategory)}</td>
         <td>${outcomeLabel(unit.outcome)}${notes}</td>
         <td>${unit.toolCalls}</td>
-        <td>${unit.findings}</td>
+        <td>${unit.findings}${unit.sampled ? ' <span class="note">抽查</span>' : ""}</td>
       </tr>`;
     }).join("");
     $("units").innerHTML = `<table>
@@ -386,6 +406,15 @@ function render(data) {
         <div class="note">证据：${comment.evidence.length ? comment.evidence.join(", ") : "无（规则触发，未取得原文证据）"}</div>
       </article>`).join("");
   }
+}
+
+function renderSampling(sampling) {
+  const box = $("sampling");
+  if (!box) {
+    return;
+  }
+  box.innerHTML = sampling && sampling.summary
+    ? `<div class="note">${escapeHtml(sampling.summary)}</div>` : "";
 }
 
 const TIERS = { MUST_INVESTIGATE: "必查", JUDGE: "待判断", SKIP: "跳过" };

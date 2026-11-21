@@ -21,6 +21,9 @@ import com.codereview.agent.triage.rules.RuleContext;
 import com.codereview.agent.triage.rules.RuleHit;
 import com.codereview.agent.triage.screen.ScreenedFile;
 import com.codereview.agent.triage.screen.Screening;
+import com.codereview.agent.triage.staticanalysis.SourceStaticAnalysis;
+import com.codereview.agent.triage.staticanalysis.StaticAnalysis;
+import com.codereview.agent.triage.staticanalysis.StaticWarning;
 import com.codereview.agent.triage.structure.StructuralDeltaDetector;
 import com.codereview.agent.triage.tier.Tier;
 import com.codereview.agent.triage.tier.TierPolicy;
@@ -65,6 +68,7 @@ public final class TriageService {
     private final TriageModel model;
     private final TriageConfig config;
     private final SymbolIndex index;
+    private final StaticAnalysis staticAnalysis = new SourceStaticAnalysis();
 
     public TriageService(TriageModel model, TriageConfig config) {
         this(model, config, new Screening(), new SourceParser(), new RuleCatalog(RuleCatalog.defaults().rules()));
@@ -117,6 +121,7 @@ public final class TriageService {
         List<FileChange> reviewed = new ArrayList<>();
         List<AnalysisUnit> units = new ArrayList<>();
 
+        java.util.Map<String, List<StaticWarning>> warningsByPath = new java.util.HashMap<>();
         for (FileChange change : changes) {
             Screening.Decision decision = screening.screen(change);
             if (!decision.review()) {
@@ -127,11 +132,16 @@ public final class TriageService {
             CompilationUnit before = parseOrNull(change.oldText());
             CompilationUnit after = parseOrNull(change.newText());
             units.addAll(mapper.map(change, before, after));
+            List<StaticWarning> warnings = staticAnalysis.onAddedLines(change);
+            if (!warnings.isEmpty()) {
+                warningsByPath.put(change.displayPath(), warnings);
+            }
         }
 
         AtomicInteger modelCalls = new AtomicInteger();
         AtomicInteger unparsed = new AtomicInteger();
-        List<PlanAssembler.Candidate> candidates = assessAll(units, modelCalls, unparsed, symbolIndex);
+        List<PlanAssembler.Candidate> candidates = assessAll(units, modelCalls, unparsed, symbolIndex,
+                warningsByPath);
 
         PlanAssembler.Result assembled = assembler.assemble(candidates, config.maxInvestigateUnits());
 
@@ -149,14 +159,17 @@ public final class TriageService {
     }
 
     private List<PlanAssembler.Candidate> assessAll(List<AnalysisUnit> units, AtomicInteger modelCalls,
-                                                    AtomicInteger unparsed, SymbolIndex symbolIndex) {
+                                                    AtomicInteger unparsed, SymbolIndex symbolIndex,
+                                                    java.util.Map<String, List<StaticWarning>> warningsByPath) {
         if (units.isEmpty()) {
             return List.of();
         }
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<PlanAssembler.Candidate>> futures = new ArrayList<>(units.size());
             for (AnalysisUnit unit : units) {
-                futures.add(executor.submit(() -> assessOne(unit, modelCalls, unparsed, symbolIndex)));
+                List<StaticWarning> warnings = warningsFor(unit, warningsByPath);
+                futures.add(executor.submit(
+                        () -> assessOne(unit, modelCalls, unparsed, symbolIndex, warnings)));
             }
             List<PlanAssembler.Candidate> candidates = new ArrayList<>(units.size());
             for (Future<PlanAssembler.Candidate> future : futures) {
@@ -172,16 +185,16 @@ public final class TriageService {
     }
 
     private PlanAssembler.Candidate assessOne(AnalysisUnit unit, AtomicInteger modelCalls, AtomicInteger unparsed,
-                                              SymbolIndex symbolIndex) {
+                                              SymbolIndex symbolIndex, List<StaticWarning> warnings) {
         StructuralDeltaDetector.Detection detection = detector.detect(unit);
         if (!detection.parsed()) {
             unparsed.incrementAndGet();
         }
-        RuleContext context = new RuleContext(unit, detection.changes());
+        RuleContext context = new RuleContext(unit, detection.changes(), warnings);
         List<RuleHit> hits = rules.evaluate(context);
         TierPolicy.Decision decision = tierPolicy.decide(context, hits);
 
-        String facts = factsFor(unit, symbolIndex);
+        String facts = factsFor(unit, symbolIndex, warnings);
         UnitAssessment assessment;
         if (decision.tier() == Tier.SKIP) {
             assessment = UnitAssessment.declining(decision.reason());
@@ -227,12 +240,35 @@ public final class TriageService {
      * The index answers name-level questions only. When it cannot find the symbol the prompt
      * stays silent rather than guessing, so the model never receives a fact nobody computed.
      */
-    private static String factsFor(AnalysisUnit unit, SymbolIndex index) {
-        if (index.isEmpty()) {
-            return "";
+    private static String factsFor(AnalysisUnit unit, SymbolIndex index, List<StaticWarning> warnings) {
+        String symbolFacts = "";
+        if (!index.isEmpty()) {
+            SymbolFacts facts = index.factsFor(simpleName(unit.name()));
+            symbolFacts = facts.isEmpty() ? "" : facts.describe();
         }
-        SymbolFacts facts = index.factsFor(simpleName(unit.name()));
-        return facts.isEmpty() ? "" : facts.describe();
+        if (warnings.isEmpty()) {
+            return symbolFacts;
+        }
+        String reported = warnings.stream().map(StaticWarning::describe)
+                .collect(java.util.stream.Collectors.joining("；"));
+        return (symbolFacts.isEmpty() ? "" : symbolFacts + " ") + "静态检查在新增代码上报告：" + reported + "。";
+    }
+
+    /**
+     * A warning belongs to a unit when its line falls inside that unit's new-side range. Warnings
+     * outside every unit (for example a changed import) stay attached to the file and are dropped
+     * here, because there is no unit that could carry them.
+     */
+    private static List<StaticWarning> warningsFor(AnalysisUnit unit,
+                                                   java.util.Map<String, List<StaticWarning>> byPath) {
+        List<StaticWarning> warnings = byPath.get(unit.file());
+        if (warnings == null || unit.after() == null) {
+            return List.of();
+        }
+        return warnings.stream()
+                .filter(warning -> warning.line() >= unit.after().startLine()
+                        && warning.line() <= unit.after().endLine())
+                .toList();
     }
 
     private static String simpleName(String unitName) {

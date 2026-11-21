@@ -87,6 +87,19 @@ public final class RuleCatalog {
                 "code was removed with nothing added in its place; the callers may still expect it",
                 context -> context.unit().removedLines() > 0 && context.unit().addedLines() == 0));
 
+        // The static checks answer a different question from the shape rules: not "what changed"
+        // but "what the new code is". A string compared with == is a defect the diff cannot show,
+        // because before and after look the same.
+        defaults.add(new Rule("STATIC-CORRECTNESS", RiskCategory.CONSISTENCY, true,
+                "静态检查在新增代码上报告了确定的缺陷（字符串字面量用 == 比较、捕获 Throwable）",
+                context -> !context.warningsOf("STRING_EQUALITY", "CATCH_THROWABLE").isEmpty()));
+
+        defaults.add(new Rule("STATIC-STYLE", RiskCategory.LOGIC, false,
+                "静态检查在新增代码上报告了可疑写法（直接写标准输出、printStackTrace）",
+                context -> context.warnings().stream()
+                        .anyMatch(warning -> !"STRING_EQUALITY".equals(warning.kind())
+                                && !"CATCH_THROWABLE".equals(warning.kind()))));
+
         return new RuleCatalog(defaults);
     }
 
