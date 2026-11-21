@@ -80,35 +80,42 @@ strong counter-evidence retracts.
 ## Evaluation
 
 `mvn -q compile` then `java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner`
-replays 20 mutations through the whole pipeline and writes `eval/latest-report.md` and
+replays 22 mutations through the whole pipeline and writes `eval/latest-report.md` and
 `eval/latest-report.json`. Add `--real` to use the configured model instead of the stand-ins.
 
 Real model (`deepseek-chat`, temperature 0), latest run:
 
 | metric | value |
 |---|---|
-| triage unit recall | 86% (12/14) |
+| triage unit recall | 81% (13/16) |
 | triage false positive rate | 0% (0/6) |
-| rule-gated recall (MUST, no model involved) | 86% (12/14) |
+| rule-gated recall (MUST, no model involved) | 81% (13/16) |
 | rule-gated false positives (MUST on clean changes) | 0% (0/6) |
-| end-to-end recall | 64% (9/14) |
-| findings | 11 |
-| kept / downgraded / dropped | 11 / 0 / 0 |
+| end-to-end recall | 63% (10/16) |
+| findings | 13 |
+| kept / downgraded / dropped | 13 / 0 / 0 |
 
 Offline stand-ins, same corpus:
 
 | metric | value |
 |---|---|
-| triage unit recall | 93% (13/14) |
+| triage unit recall | 88% (14/16) |
 | triage false positive rate | 17% (1/6) |
-| end-to-end recall | 71% (10/14) |
-| kept / downgraded / dropped | 13 / 0 / 1 |
+| end-to-end recall | 69% (11/16) |
+| kept / downgraded / dropped | 14 / 0 / 1 |
 
 Read these carefully. The stand-in models never decline: the triage stand-in asks a question about
 every structural change, and the verifier stand-in retracts as soon as it reads a null check anywhere
 nearby — which is how one real defect (`resource-unclosed`) was dropped. Those rows measure wiring, not
 model quality. The rule-gated rows are the part no model can influence, and they are identical in both
 runs.
+
+Two semantic cases were added next, where no shape signals the bug. Logging the password in
+`AuthService.login` is caught, because the auth path is already flagged by rule; it took the model reading
+the line to say what was wrong with it. Moving `validate(order)` after `repository.save(order)` is not
+caught at all: two statements swap places, no rule fires, and the cheap gate drops the unit as a small
+shapeless change. That is the gate's price, and the honest conclusion is that a pure reordering is never
+a no-op — side effects have an order — so the gate should not swallow it.
 
 Two of the new cases were added precisely because the first expanded run missed them, and each
 exposed a real gap. A boundary bug (`> 10` becoming `>= 10`) changed no shape the detector knew, so

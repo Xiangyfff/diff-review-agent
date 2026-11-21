@@ -1,18 +1,18 @@
 # Code review agent — evaluation
 
-Corpus: 20 mutations, 14 of them introduce a known defect, 6 are clean refactors.
+Corpus: 22 mutations, 16 of them introduce a known defect, 6 are clean refactors.
 
 Models: deepseek-chat at https://api.deepseek.com/v1
 
 | metric | value |
 |---|---|
-| triage unit recall | 86% (12/14) |
+| triage unit recall | 81% (13/16) |
 | triage false positive rate | 0% (0/6) |
-| rule-gated recall (MUST, no model involved) | 86% (12/14) |
+| rule-gated recall (MUST, no model involved) | 81% (13/16) |
 | rule-gated false positives (MUST on clean changes) | 0% (0/6) |
-| end-to-end recall | 64% (9/14) |
-| findings | 11 |
-| kept / downgraded / dropped | 11 / 0 / 0 |
+| end-to-end recall | 63% (10/16) |
+| findings | 13 |
+| kept / downgraded / dropped | 13 / 0 / 0 |
 | duplicates merged | 0 |
 | invalid retractions | 0 |
 
@@ -32,7 +32,7 @@ Models: deepseek-chat at https://api.deepseek.com/v1
 | resource-unclosed | resource | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | no |
 | query-concatenated | injection | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | no |
 | comment-added | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
-| visibility-narrowed | contract | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| visibility-narrowed | contract | MUST_INVESTIGATE | 1 | 2 | 2 | 0 | 0 | 0 | 0 | yes |
 | signature-changed | contract | MUST_INVESTIGATE | 1 | 0 | 0 | 0 | 0 | 0 | 0 | no |
 | statements-reordered | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
 | auth-null-checks-removed | security | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
@@ -40,3 +40,5 @@ Models: deepseek-chat at https://api.deepseek.com/v1
 | negative-quantity-check-removed | validation | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
 | guard-kept-but-logged | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
 | case-insensitive-password | security | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| password-logged | semantic-pii | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| validation-after-use | semantic-order | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | no |

@@ -1,18 +1,18 @@
 # Code review agent — evaluation
 
-Corpus: 20 mutations, 14 of them introduce a known defect, 6 are clean refactors.
+Corpus: 22 mutations, 16 of them introduce a known defect, 6 are clean refactors.
 
 Models: deterministic offline stand-ins
 
 | metric | value |
 |---|---|
-| triage unit recall | 93% (13/14) |
+| triage unit recall | 88% (14/16) |
 | triage false positive rate | 17% (1/6) |
-| rule-gated recall (MUST, no model involved) | 86% (12/14) |
+| rule-gated recall (MUST, no model involved) | 81% (13/16) |
 | rule-gated false positives (MUST on clean changes) | 0% (0/6) |
-| end-to-end recall | 71% (10/14) |
-| findings | 17 |
-| kept / downgraded / dropped | 13 / 0 / 1 |
+| end-to-end recall | 69% (11/16) |
+| findings | 18 |
+| kept / downgraded / dropped | 14 / 0 / 1 |
 | duplicates merged | 3 |
 | invalid retractions | 0 |
 
@@ -40,3 +40,5 @@ Models: deterministic offline stand-ins
 | negative-quantity-check-removed | validation | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
 | guard-kept-but-logged | clean | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
 | case-insensitive-password | security | MUST_INVESTIGATE | 1 | 2 | 1 | 0 | 0 | 1 | 0 | yes |
+| password-logged | semantic-pii | MUST_INVESTIGATE | 1 | 1 | 1 | 0 | 0 | 0 | 0 | yes |
+| validation-after-use | semantic-order | SKIP | 0 | 0 | 0 | 0 | 0 | 0 | 0 | no |
