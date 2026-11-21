@@ -61,7 +61,7 @@ public final class InvestigationRunner {
             turns++;
             InvestigationState state = new InvestigationState(task.unitKey(), task.file(), task.line(),
                     task.before(), task.after(), task.changes(), List.copyOf(open), store.all(),
-                    toolCalls, config.maxToolCalls() - toolCalls, lastRejection, attempts);
+                    toolCalls, config.maxToolCalls() - toolCalls, lastRejection, attempts, task.facts());
 
             ModelTurn turn;
             try {
@@ -142,7 +142,7 @@ public final class InvestigationRunner {
         }
 
         return new InvestigationResult(task.unitKey(), task.file(), task.line(), findings, abandoned,
-                rejected, toolCalls, turns, store.all(), outcome);
+                rejected, toolCalls, turns, store.all(), outcome, List.copyOf(attempts));
     }
 
     /**

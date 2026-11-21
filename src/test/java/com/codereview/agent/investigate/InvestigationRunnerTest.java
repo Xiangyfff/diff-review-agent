@@ -67,7 +67,7 @@ class InvestigationRunnerTest {
 
     private static InvestigationTask task(String... questions) {
         return new InvestigationTask("u1", FILE, 12, "before", "after", List.of("NULL_CHECK_REMOVED"),
-                List.of(questions));
+                List.of(questions), "");
     }
 
     private static ToolCall read() {

@@ -23,7 +23,9 @@ public record InvestigationState(
         /** Why the previous conclusion was rejected, or an empty string. */
         String lastRejection,
         /** One line per tool call so far, including the ones that returned nothing. */
-        List<String> attempts) {
+        List<String> attempts,
+        /** Name-level facts from triage, or an empty string when there are none. */
+        String facts) {
 
     public InvestigationState {
         changes = List.copyOf(changes);

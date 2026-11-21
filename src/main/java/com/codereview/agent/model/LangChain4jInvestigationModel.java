@@ -92,6 +92,11 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
         text.append("--- 改动前 ---\n").append(state.before()).append("\n--- 改动后 ---\n")
                 .append(state.after()).append("\n\n");
 
+        if (!state.facts().isEmpty()) {
+            text.append("初审给出的背景事实（按名字统计，只是线索，不能当成结论）：\n")
+                    .append(state.facts()).append("\n\n");
+        }
+
         if (!state.changes().isEmpty()) {
             text.append("检测到的结构变化：\n");
             state.changes().forEach(change -> text.append("- ").append(change).append('\n'));

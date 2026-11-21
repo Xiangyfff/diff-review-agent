@@ -52,7 +52,7 @@ strong counter-evidence retracts.
 - [x] Verify — evidence-backed refutation, keep / downgrade / retract
 - [x] Evaluation — 16 mutation cases, report written to `eval/latest-report.md`
 - [x] Pipeline — triage → investigate → verify → comments, one command
-- [x] 107 tests, no network required
+- [x] 118 tests, no network required
 - [x] LangChain4j model adapter — one class imports the SDK, everything else speaks prompts and JSON
 - [x] Cheap gate for the judge tier — a small, shapeless change never reaches the model
 - [ ] Real-model numbers (needs an API key; the offline numbers above come from the stand-ins)
@@ -76,6 +76,15 @@ strong counter-evidence retracts.
   unit that gathers ten excerpts the evidence block drops from 2,820 to 480 characters.
 - **The model layer is a thin interface.** Tests run against a deterministic offline model; the
   LangChain4j adapter is one implementation behind it.
+- **Each stage hands the next one its findings, not just its conclusions.** Triage passes its
+  name-level facts into the investigation prompt (marked as leads, never as verdicts), and
+  investigation passes its own tool-call log into the critic's prompt, including the calls that
+  found nothing, so the critic does not spend its four calls repeating them.
+- **Running the tests is deliberately out of scope.** Executing the changed code would break the
+  read-only boundary, needs a build of the target repository, and invites flaky failures. The
+  evidence gate stops fabricated citations, which is the failure that matters for a comment; a
+  failing test would be stronger evidence, but it is a different product (`run_test` is the next
+  tool if this ever stops being a demo).
 
 ## Evaluation
 

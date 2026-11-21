@@ -80,7 +80,8 @@ public final class InvestigateDemo {
                 unit.unit().textBefore(),
                 unit.unit().textAfter(),
                 unit.changes().stream().map(change -> change.describe()).toList(),
-                unit.questions().stream().map(question -> question.text()).toList());
+                unit.questions().stream().map(question -> question.text()).toList(),
+                unit.facts());
     }
 
     private static ObjectNode render(PlannedUnit unit, InvestigationResult result) {

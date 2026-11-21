@@ -133,7 +133,7 @@ class ReviewToolsTest {
         InvestigationTask task = new InvestigationTask("u1", "a/Login.java", 5,
                 "String handle(String user) {\n    return user.trim();\n}",
                 "String handle(String user) {\n    return null;\n}",
-                List.of("NULL_CHECK_REMOVED"), List.of("这个值是否可能为空？"));
+                List.of("NULL_CHECK_REMOVED"), List.of("这个值是否可能为空？"), "");
         EvidenceStore empty = new EvidenceStore();
 
         InvestigationResult result = new InvestigationRunner(new MockInvestigationModel(),

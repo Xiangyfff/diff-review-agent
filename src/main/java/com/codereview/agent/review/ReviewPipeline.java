@@ -119,7 +119,7 @@ public final class ReviewPipeline {
                         .filter(evidence -> finding.evidenceIds().contains(evidence.id()))
                         .toList();
                 VerifyResult verdict = verifierRunner.review(new VerificationRequest(finding, cited,
-                        unit.unit().textBefore(), unit.unit().textAfter()));
+                        unit.unit().textBefore(), unit.unit().textAfter(), result.attempts()));
                 verifyCalls += verdict.toolCalls();
                 if (verdict.invalid()) {
                     invalidRetractions++;
@@ -191,6 +191,7 @@ public final class ReviewPipeline {
                 unit.unit().textBefore(),
                 unit.unit().textAfter(),
                 unit.changes().stream().map(change -> change.describe()).toList(),
-                unit.questions().stream().map(question -> question.text()).toList());
+                unit.questions().stream().map(question -> question.text()).toList(),
+                unit.facts());
     }
 }
