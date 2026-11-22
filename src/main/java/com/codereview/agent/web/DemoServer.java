@@ -325,6 +325,9 @@ public final class DemoServer {
                 });
             }
             double samplePercent = number(request, "sample", 0.0);
+            String description = text(request, "description");
+            pipeline.authorIntent(com.codereview.agent.triage.model.AuthorIntent
+                    .fromText(description, "页面输入"));
             long started = System.nanoTime();
             TokenLedger.reset();
             ReviewReport report = pipeline.sampling(Sampling.percent(samplePercent))
@@ -335,6 +338,11 @@ public final class DemoServer {
             body.put("models", pipeline.modelDescription());
             body.put("depth", depth.name());
             body.put("samplePercent", samplePercent);
+            if (!pipeline.authorIntent().isEmpty()) {
+                ObjectNode intent = body.putObject("authorIntent");
+                intent.put("title", pipeline.authorIntent().title());
+                intent.put("body", pipeline.authorIntent().body());
+            }
             body.put("durationMs", (System.nanoTime() - started) / 1_000_000);
             ObjectNode usage = body.putObject("tokens");
             usage.put("calls", tokens.calls());

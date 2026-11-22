@@ -62,6 +62,11 @@ public final class ReviewPipeline {
         return this;
     }
 
+    /** What the author said about this change, if anything was supplied. */
+    public com.codereview.agent.triage.model.AuthorIntent authorIntent() {
+        return authorIntent;
+    }
+
     /** Turn policy retrieval off; used to measure what the policy documents contribute. */
     public ReviewPipeline policyRetrieval(boolean enabled) {
         this.policyRetrieval = enabled;

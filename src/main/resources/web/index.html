@@ -145,6 +145,11 @@
         <input type="number" id="sample" min="0" max="100" step="5" value="0">
       </div>
       <div class="tight"><button id="review">开始审查</button></div>
+      <div class="wide">
+        <label for="description">作者说明（可选，第一行当标题）</label>
+        <input type="text" id="description" spellcheck="false"
+               placeholder="例如：只改了日志写法，其他没动">
+      </div>
     </div>
     <div class="hint" id="modeHint">正在确认模型…</div>
   </section>
@@ -281,6 +286,11 @@ function policyNote(unit) {
   return `<div class="note">依据：${escapeHtml(ids.join("、"))}</div>`;
 }
 
+function intentCaption(data) {
+  const intent = data.authorIntent;
+  return intent && intent.title ? escapeHtml(intent.title) : "未提供";
+}
+
 function policyCaption(data) {
   const units = (data.unitOutcomes || []).filter((unit) => (unit.policies || []).length > 0).length;
   if (!units) return "未命中";
@@ -369,6 +379,7 @@ function review() {
     head: $("head").value.trim(),
     depth: $("depth").value,
     sample: Number($("sample").value || 0),
+    description: $("description").value,
     include: include
   };
   lastRun = payload;
@@ -395,6 +406,7 @@ function render(data) {
     card(data.questions, "待确认"),
     card(data.dropped, "被丢弃"),
     card(policyCaption(data), "政策"),
+    card(intentCaption(data), "作者说明"),
     card(samplingCaption(data.sampling), "抽查"),
     card(tokenCaption(data.tokens), "模型消耗"),
     card(data.durationMs + " ms", "耗时")

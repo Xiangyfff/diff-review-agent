@@ -147,6 +147,8 @@ java -cp "target/classes;<classpath>" com.codereview.agent.review.ReviewPipeline
 java -cp "target/classes;<classpath>" com.codereview.agent.review.ReviewPipeline <repo> <base> <head> out --description note.txt
 ```
 
+演示页上也有对应的一栏「作者说明」，填一行就会写进报告卡片。
+
 这段文字进的是意图扫描的提示词，标明「作者自己的说法，不是证据」，并要求「改动和说明不一致就写进跨文件疑点」。它不进证据库，也不参与结论的证据校验——描述可以撒谎，证据编号不行。
 
 **为什么不是 MCP。** MCP 解决的是跨进程、跨产品的工具发现与调用；这里只是读一个文档，加一层协议要多一个子进程、一套序列化、一类新的失败模式，换不到任何东西。写进简历的说法是：知道 MCP 与普通 HTTP 的边界，不为一个请求引入协议。
