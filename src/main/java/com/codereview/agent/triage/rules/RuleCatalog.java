@@ -102,6 +102,13 @@ public final class RuleCatalog {
                 "静态检查在新增代码上报告了确定的缺陷（字符串字面量用 == 比较、捕获 Throwable）",
                 context -> !context.warningsOf("STRING_EQUALITY", "CATCH_THROWABLE").isEmpty()));
 
+        // A policy document marked this area as mandatory. The author of the document is the one
+        // saying "any change here has to be checked", so this gates on a fact, like the path rule,
+        // and the model never gets to decide whether the area matters.
+        defaults.add(new Rule("POLICY-CONSTRAINT", RiskCategory.CONSISTENCY, true,
+                "仓库的政策文档把这一块标成强制，改动必须逐条对照",
+                context -> context.policyMandatory()));
+
         defaults.add(new Rule("STATIC-STYLE", RiskCategory.LOGIC, false,
                 "静态检查在新增代码上报告了可疑写法（直接写标准输出、printStackTrace）",
                 context -> context.warnings().stream()
@@ -136,6 +143,7 @@ public final class RuleCatalog {
      */
     private static List<StructuralChange> evidenceFor(Rule rule, RuleContext context) {
         return switch (rule.id()) {
+            case "POLICY-CONSTRAINT" -> List.of();
             case "NULL-CHECK-REMOVED" -> context.of(StructuralChange.Kind.NULL_CHECK_REMOVED);
             case "CONTRACT-CHANGED" -> union(context,
                     StructuralChange.Kind.VISIBILITY_CHANGED,

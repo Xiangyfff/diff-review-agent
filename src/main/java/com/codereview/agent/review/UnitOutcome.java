@@ -8,15 +8,23 @@ package com.codereview.agent.review;
  */
 public record UnitOutcome(String file, String unitKey, String tier, String riskCategory,
         String outcome, int toolCalls, int findings, int verifyCalls, java.util.List<String> abandoned,
-        boolean sampled) {
+        boolean sampled, java.util.List<String> policies) {
 
     public UnitOutcome(String file, String unitKey, String tier, String riskCategory, String outcome,
             int toolCalls, int findings, int verifyCalls, java.util.List<String> abandoned) {
         this(file, unitKey, tier, riskCategory, outcome, toolCalls, findings, verifyCalls, abandoned,
-                false);
+                false, java.util.List.of());
+    }
+
+    public UnitOutcome(String file, String unitKey, String tier, String riskCategory, String outcome,
+            int toolCalls, int findings, int verifyCalls, java.util.List<String> abandoned,
+            boolean sampled) {
+        this(file, unitKey, tier, riskCategory, outcome, toolCalls, findings, verifyCalls, abandoned,
+                sampled, java.util.List.of());
     }
 
     public UnitOutcome {
         abandoned = abandoned == null ? java.util.List.of() : java.util.List.copyOf(abandoned);
+        policies = policies == null ? java.util.List.of() : java.util.List.copyOf(policies);
     }
 }

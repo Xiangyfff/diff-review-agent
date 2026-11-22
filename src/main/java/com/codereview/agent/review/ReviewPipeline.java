@@ -48,11 +48,18 @@ public final class ReviewPipeline {
     private final Verifier verifier;
     private final InvestigateConfig investigateConfig;
     private Sampling sampling = Sampling.OFF;
+    private boolean policyRetrieval = true;
     private final VerifyConfig verifyConfig;
     private final ModelFactory models;
     private final String modelDescription;
 
     /** Mutable on purpose: the demo sets it once before running and nothing else touches it. */
+    /** Turn policy retrieval off; used to measure what the policy documents contribute. */
+    public ReviewPipeline policyRetrieval(boolean enabled) {
+        this.policyRetrieval = enabled;
+        return this;
+    }
+
     public ReviewPipeline sampling(Sampling sampling) {
         this.sampling = sampling == null ? Sampling.OFF : sampling;
         return this;
@@ -117,7 +124,9 @@ public final class ReviewPipeline {
      */
     public ReviewReport run(Path repository, String baseRevision, String headRevision, Depth depth,
             List<String> includePaths) throws IOException {
-        TriagePlan plan = triage.including(includePaths).triage(repository, baseRevision, headRevision);
+        TriageService effectiveTriage = policyRetrieval ? triage : triage.withoutPolicies();
+        TriagePlan plan = effectiveTriage.including(includePaths)
+                .triage(repository, baseRevision, headRevision);
         List<PlannedUnit> scheduled = plan.scheduled();
         // Sampling needs the tools, so a triage-only run measures nothing here and says so.
         List<PlannedUnit> sampled = depth == Depth.TRIAGE_ONLY
@@ -145,7 +154,7 @@ public final class ReviewPipeline {
                 }
                 outcomes.add(new UnitOutcome(unit.unit().file(), unit.unit().key(),
                         unit.tier().name(), unit.category().name(), "TRIAGE_ONLY", 0, 0, 0,
-                        List.of()));
+                        List.of(), false, policyIdsOf(unit)));
             }
             return report(plan, outcomes, comments, tally, Sampling.Summary.none());
         }
@@ -237,7 +246,23 @@ public final class ReviewPipeline {
                 .toList();
         return new UnitOutcome(unit.unit().file(), unit.unit().key(), unit.tier().name(),
                 unit.category().name(), result.outcome().name(), result.toolCalls(),
-                result.findings().size(), verifyCalls, abandonReasons, sampled);
+                result.findings().size(), verifyCalls, abandonReasons, sampled, policyIdsOf(unit));
+    }
+
+    /** The policy clauses the triage stage attached to this unit, for the report and the page. */
+    private static List<String> policyIdsOf(PlannedUnit unit) {
+        String facts = unit.facts();
+        if (facts == null || facts.isEmpty()) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("pol-[A-Za-z0-9-]+").matcher(facts);
+        while (matcher.find()) {
+            if (!ids.contains(matcher.group())) {
+                ids.add(matcher.group());
+            }
+        }
+        return ids;
     }
 
     private ReviewReport report(TriagePlan plan, List<UnitOutcome> outcomes, List<Comment> comments,

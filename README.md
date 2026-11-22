@@ -6,7 +6,7 @@
     <img src="https://img.shields.io/badge/LangChain4j-1.24-6DB33F?style=flat-square" alt="LangChain4j 1.24">
     <img src="https://img.shields.io/badge/JGit-5.13-DC382D?style=flat-square" alt="JGit">
     <img src="https://img.shields.io/badge/JavaParser-3.26-4479A1?style=flat-square" alt="JavaParser">
-    <img src="https://img.shields.io/badge/tests-157%20passing-2ea44f?style=flat-square" alt="157 tests">
+    <img src="https://img.shields.io/badge/tests-177%20passing-2ea44f?style=flat-square" alt="177 tests">
     <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT License"></a>
   </p>
 </div>
@@ -131,6 +131,29 @@ java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner targe
 
 报告写到 `eval/run/latest-report.md`；去掉 `--real` 用离线替身，不花钱也不需要密钥。
 
+
+## 政策检索
+
+仓库里可以放一份 `docs/policies/*.md`，写这个项目的硬性规定。初审把每个改动单元拿到这些条款里检索，命中的条款作为「规范摘录」贴进提示词，并且标了 `[强制]` 的条款直接把单元推进必查档——不问模型的意见。
+
+做法上有几处是踩过才定下来的：
+
+- **不装向量数据库。** 几百段文档，内存里暴力余弦就是微秒级；加一个库等于加一个服务、一份 schema、一种新的失败模式。这行字值得写进简历：评估过，判断不值得。
+- **切块按标题。** 一个 `##` 一段，块编号带文件与标题（`pol-security-2`）。块号稳定，重跑时提示词里的引用不变。
+- **查询不是整个 diff。** 把整个 diff 拿去嵌入会稀释成「Java 代码变了」。查询只写文件、方法名、结构变化，加上改动后的代码片段（截断）。
+- **查询用中文。** 条款是中文写的，混语言查询会掉精度：同样三条用例，中文查询把正确条款的分数从 0.49 提到 0.61，无关改动停在 0.52，阈值 0.55 就能分开。
+- **混合打分。** 纯嵌入会模糊标识符，`System.out`、`equalsIgnoreCase` 这种最强信号会被主题相似的无关条款压过去。加了一点按标识符重合的加分（权重 0.25）。
+- **检索错的代价更大。** 摘录一律标注「这是规范摘录，不是代码证据」，且不参与结论的证据校验；正文校验仍然只认 `ev-` 编号。
+- **不命中是正常状态。** 没有政策文档、嵌入端点没开、分数不过阈值，都只是「没有政策信号」，从来不算运行失败。
+
+消融：同一份语料开关检索各跑一遍，召回与误报完全一样，只有两个单元从待判断档升到必查档（`resource-unclosed`、`policy-stdout-in-audit`）。原因写在 `eval/latest-policy.md`：我们写的强制条款恰好都能被路径或静态检查抓到，政策检索真正对付的是「无法用形状表达」的条款（令牌有效期、日志必带 trace id），这类只补了两条用例。
+
+开关不是另一份代码：`--no-policy` 关掉的是同一条流水线的开关。
+
+```bash
+java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner target/eval-corpus eval/policy-off --no-policy
+```
+
 ## 技术栈
 
 | 层次 | 技术 | 用途 |
@@ -140,7 +163,7 @@ java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner targe
 | 取证 | JGit、JavaParser、JavaParser Symbol Solver | diff 与重命名、语法树比对、类型级调用图 |
 | 模型 | LangChain4j 1.24、强制工具调用 | 四种回复全部走 JSON Schema 约束的工具调用；全项目只有一个类 import 该 SDK |
 | 输出 | Jackson、GitHub REST | 计划与报告序列化、Pull Request 行内评论 |
-| 评测 | JUnit 5、AssertJ、变异体语料 | 157 个测试，全程离线；评估与消融各自可复现 |
+| 评测 | JUnit 5、AssertJ、变异体语料 | 177 个测试，全程离线；评估与消融各自可复现 |
 
 ## 本地运行
 
@@ -160,7 +183,7 @@ java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner targe
 mvn test
 ```
 
-157 个用例，全用离线确定性替身，不联网、不花钱。
+177 个用例，全用离线确定性替身，不联网、不花钱。
 
 ### 2. 审一次真实提交
 
@@ -274,6 +297,8 @@ diff-review-agent
 - **端点不支持强制工具调用时，schema 换成文字** — 同一个问题先按强制工具调用问，第一次被拒就整场改用文字描述 schema，并由原有的语法修复与机械校验兜住；本地模型就是这种端点。
 
 ## 已知限制
+
+- **政策检索在我们语料上几乎没改变召回。** 见 `eval/latest-policy.md`：强制条款大多能被别的规则抓到，真正无法用形状表达的条款只补了两条用例。机制是通的，价值还没被这份语料证明。
 
 - **语义类缺陷基本靠运气** — SQL 拼接、语句换序、边界魔法数这类改动，形状规则能覆盖一部分（换序、字面量、运算符），真正的业务语义（"这个校验应该在前"）程序判不了；位置敏感（认证、支付、迁移）的还能靠路径规则推进去，藏在普通业务逻辑里的会漏。
 - **太胖的方法不切** — 单元就是方法，一千行的方法会让提示词过长、结论发散；按语句块再切需要重新映射所有外部信号，暂时没做。

@@ -51,6 +51,9 @@ public final class EvalRunner {
                 : new ReviewPipeline(models,
                         com.codereview.agent.investigate.InvestigateConfig.defaults(),
                         com.codereview.agent.verify.VerifyConfig.defaults());
+        if (options.contains("--no-policy")) {
+            pipeline.policyRetrieval(false);
+        }
         EvalReport report = run(workspace, pipeline);
         Files.createDirectories(output);
         Files.writeString(output.resolve("latest-report.md"), report.renderMarkdown(),

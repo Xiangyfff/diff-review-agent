@@ -196,4 +196,13 @@ class TriageServiceTest {
         assertThat(seen.get(0).facts()).contains("另外 1 个源文件").contains("public");
         assertThat(seen.get(0).render()).contains("背景事实").contains("不能当成结论");
     }
+
+    @Test
+    void wideningTheScreeningDoesNotQuietlyTurnPolicyRetrievalBackOn() {
+        TriageService off = TriageService.offline().withoutPolicies();
+
+        assertThat(off.including(java.util.List.of("src/generated")).policyRetrieval()).isFalse();
+        assertThat(off.withPolicies(com.codereview.agent.triage.policy.PolicyIndex.empty())
+                .policyRetrieval()).isTrue();
+    }
 }

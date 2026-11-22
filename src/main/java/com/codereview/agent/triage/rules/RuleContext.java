@@ -1,5 +1,6 @@
 package com.codereview.agent.triage.rules;
 
+import com.codereview.agent.triage.policy.PolicyHit;
 import com.codereview.agent.triage.staticanalysis.StaticWarning;
 import com.codereview.agent.triage.structure.StructuralChange;
 import com.codereview.agent.triage.unit.AnalysisUnit;
@@ -10,15 +11,24 @@ import java.util.stream.Collectors;
 
 /** Everything a rule is allowed to look at. Rules never call a model and never parse. */
 public record RuleContext(AnalysisUnit unit, List<StructuralChange> changes,
-        List<StaticWarning> warnings) {
+        List<StaticWarning> warnings, List<PolicyHit> policies) {
 
     public RuleContext(AnalysisUnit unit, List<StructuralChange> changes) {
-        this(unit, changes, List.of());
+        this(unit, changes, List.of(), List.of());
+    }
+
+    public RuleContext(AnalysisUnit unit, List<StructuralChange> changes, List<StaticWarning> warnings) {
+        this(unit, changes, warnings, List.of());
     }
 
     public RuleContext {
         changes = List.copyOf(changes);
         warnings = warnings == null ? List.of() : List.copyOf(warnings);
+        policies = policies == null ? List.of() : List.copyOf(policies);
+    }
+
+    public boolean policyMandatory() {
+        return policies.stream().anyMatch(hit -> hit.chunk().mandatory());
     }
 
     public boolean warned() {

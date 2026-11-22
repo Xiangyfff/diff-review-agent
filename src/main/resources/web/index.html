@@ -275,6 +275,18 @@ function bindIncludeButtons(files) {
   });
 }
 
+function policyNote(unit) {
+  const ids = unit.policies || [];
+  if (!ids.length) return "";
+  return `<div class="note">依据：${escapeHtml(ids.join("、"))}</div>`;
+}
+
+function policyCaption(data) {
+  const units = (data.unitOutcomes || []).filter((unit) => (unit.policies || []).length > 0).length;
+  if (!units) return "未命中";
+  return `${units} 个单元`;
+}
+
 function card(value, caption) {
   return `<div class="card"><div class="num">${value}</div><div class="cap">${caption}</div></div>`;
 }
@@ -382,6 +394,7 @@ function render(data) {
     card(data.assertions, "需修改"),
     card(data.questions, "待确认"),
     card(data.dropped, "被丢弃"),
+    card(policyCaption(data), "政策"),
     card(samplingCaption(data.sampling), "抽查"),
     card(tokenCaption(data.tokens), "模型消耗"),
     card(data.durationMs + " ms", "耗时")
@@ -405,7 +418,7 @@ function render(data) {
         <td>${categoryLabel(unit.riskCategory)}</td>
         <td>${outcomeLabel(unit.outcome)}${notes}</td>
         <td>${unit.toolCalls}</td>
-        <td>${unit.findings}${unit.sampled ? ' <span class="note">抽查</span>' : ""}</td>
+        <td>${unit.findings}${unit.sampled ? ' <span class="note">抽查</span>' : ""}${policyNote(unit)}</td>
       </tr>`;
     }).join("");
     $("units").innerHTML = `<table>

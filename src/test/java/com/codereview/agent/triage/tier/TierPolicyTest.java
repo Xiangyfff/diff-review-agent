@@ -1,6 +1,8 @@
 package com.codereview.agent.triage.tier;
 
 import com.codereview.agent.triage.diff.FileChange;
+import com.codereview.agent.triage.policy.PolicyChunk;
+import com.codereview.agent.triage.policy.PolicyHit;
 import com.codereview.agent.triage.rules.RiskCategory;
 import com.codereview.agent.triage.rules.RuleCatalog;
 import com.codereview.agent.triage.rules.RuleContext;
@@ -139,6 +141,35 @@ class TierPolicyTest {
         RuleContext context = new RuleContext(unit, changes);
         List<RuleHit> hits = rules.evaluate(context);
         return policy.decide(context, hits);
+    }
+
+    @Test
+    void aMandatoryPolicySectionIsEnoughToInvestigate() {
+        AnalysisUnit unit = unit(1, 0, "void save() {\n}\n", "void save() {\n    log.info(\"x\");\n}\n");
+        PolicyHit hit = new PolicyHit(new PolicyChunk("pol-security-1", "docs/policies/security.md",
+                "认证失败的日志", "认证失败时不得记录口令，也不得记录令牌。", true), 0.82);
+        List<StructuralChange> changes = List.of(StructuralChange.heuristic(
+                StructuralChange.Kind.STATEMENTS_ADDED, 12, "1 statement(s) added", "", "log.info(\"x\");"));
+        RuleContext context = new RuleContext(unit, changes, List.of(), List.of(hit));
+
+        TierPolicy.Decision decision = policy.decide(context, rules.evaluate(context));
+
+        assertThat(decision.tier()).isEqualTo(Tier.MUST_INVESTIGATE);
+        assertThat(decision.category()).isEqualTo(RiskCategory.CONSISTENCY);
+    }
+
+    @Test
+    void aPolicySectionThatIsNotMandatoryDoesNotGate() {
+        AnalysisUnit unit = unit(1, 0, "void save() {\n}\n", "void save() {\n    log.info(\"x\");\n}\n");
+        PolicyHit hit = new PolicyHit(new PolicyChunk("pol-api-1", "docs/policies/api.md",
+                "响应体", "所有响应必须是 JSON 并带上 request id。", false), 0.82);
+        List<StructuralChange> changes = List.of(StructuralChange.heuristic(
+                StructuralChange.Kind.STATEMENTS_ADDED, 12, "1 statement(s) added", "", "log.info(\"x\");"));
+        RuleContext context = new RuleContext(unit, changes, List.of(), List.of(hit));
+
+        TierPolicy.Decision decision = policy.decide(context, rules.evaluate(context));
+
+        assertThat(decision.tier()).isNotEqualTo(Tier.MUST_INVESTIGATE);
     }
 
     private static AnalysisUnit unit(int added, int removed, String before, String after) {

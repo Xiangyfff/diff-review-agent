@@ -26,7 +26,50 @@ public final class EvalCorpus {
         files.put("src/main/java/com/example/order/OrderRepository.java", orderRepository());
         files.put("src/main/java/com/example/order/OrderController.java", orderController());
         files.put("src/main/java/com/example/auth/AuthService.java", authService());
+        files.put("docs/policies/security.md", securityPolicy());
+        files.put("docs/policies/logging.md", loggingPolicy());
         return files;
+    }
+
+    /**
+     * The policy documents the corpus ships with. They are part of the base commit so that policy
+     * retrieval is measured on the same footing as every other signal: the documents exist before
+     * any change, and a change can violate one.
+     */
+    public static String securityPolicy() {
+        return """
+                # 安全与凭据
+
+                ## [强制] 认证失败的日志
+
+                认证失败时只记录用户名与失败原因。不得记录口令、口令散列、令牌或会话标识，
+                也不得把它们拼进异常消息。排查需要的字段是时间、用户名、来源地址与失败原因。
+
+                ## [强制] 口令比较
+
+                口令必须使用恒定时间的比较方式，禁止使用 equals 或 equalsIgnoreCase，
+                因为逐字符比较会在第一个不同的字符处返回，泄漏可测量的时间差。
+
+                ## 会话有效期
+
+                访问令牌的有效期不得超过两小时。刷新令牌应绑定设备指纹并可单独吊销。
+                """;
+    }
+
+    public static String loggingPolicy() {
+        return """
+                # 日志与输出
+
+                ## [强制] 生产代码不得直接写标准输出
+
+                生产代码使用日志框架，不允许 System.out 或 System.err。标准输出在容器里
+                没有级别、没有结构化字段，也无法被集中采集。
+
+                ## 日志字段
+
+                每条日志至少包含 trace id、用户标识与操作对象。金额、数量等业务数值按
+                最小必要原则记录，不得整对象序列化。
+                """;
     }
 
     public static List<MutationCase> cases() {
@@ -290,6 +333,18 @@ public final class EvalCorpus {
         cases.add(new MutationCase("tax-multiplied", price,
                 "        return amount - tax;",
                 "        return amount * tax;", "amount * tax", true, "arithmetic"));
+
+        // Two changes that no shape rule decides: the violation is written down in docs/policies
+        // rather than visible in the syntax. They exist to measure what policy retrieval adds.
+        cases.add(new MutationCase("policy-plain-equals", auth,
+                "        return user.contentEquals(password);",
+                "        return user.equals(password);",
+                "return user.equals(password);", true, "policy-security"));
+
+        cases.add(new MutationCase("policy-stdout-in-audit", service,
+                "        log.info(\"audited order {} v2\", order.getName());",
+                "        System.out.println(\"audited order \" + order.getName());",
+                "System.out.println(\"audited order", true, "policy-logging"));
 
         return cases;
     }

@@ -12,6 +12,11 @@ import com.codereview.agent.triage.model.TriageModel;
 import com.codereview.agent.triage.model.UnitAssessment;
 import com.codereview.agent.triage.model.UnitPrompt;
 import com.codereview.agent.triage.parse.SourceParser;
+import com.codereview.agent.triage.policy.OllamaEmbedder;
+import com.codereview.agent.triage.policy.PolicyHit;
+import com.codereview.agent.triage.policy.PolicyIndex;
+import com.codereview.agent.triage.policy.PolicyLibrary;
+import com.codereview.agent.triage.policy.PolicyQuery;
 import com.codereview.agent.triage.plan.PlanAssembler;
 import com.codereview.agent.triage.plan.PlannedUnit;
 import com.codereview.agent.triage.plan.TriagePlan;
@@ -69,6 +74,14 @@ public final class TriageService {
     private final TriageConfig config;
     private final SymbolIndex index;
     private final StaticAnalysis staticAnalysis = new SourceStaticAnalysis();
+    private final PolicyIndex policies;
+
+    /** Whether a repository without attached policies may still load them from docs/policies. */
+    private final boolean policyRetrieval;
+
+    /** At most this many policy excerpts reach one unit, and only above the score cut. */
+    private static final int POLICY_TOP_K = 3;
+    private static final double POLICY_MIN_SCORE = 0.55;
 
     public TriageService(TriageModel model, TriageConfig config) {
         this(model, config, new Screening(), new SourceParser(), new RuleCatalog(RuleCatalog.defaults().rules()));
@@ -81,6 +94,12 @@ public final class TriageService {
 
     public TriageService(TriageModel model, TriageConfig config, Screening screening,
                          SourceParser parser, RuleCatalog rules, SymbolIndex index) {
+        this(model, config, screening, parser, rules, index, PolicyIndex.empty());
+    }
+
+    public TriageService(TriageModel model, TriageConfig config, Screening screening,
+                         SourceParser parser, RuleCatalog rules, SymbolIndex index,
+                         PolicyIndex policies) {
         this.screening = screening;
         this.parser = parser;
         this.mapper = new UnitMapper();
@@ -91,6 +110,43 @@ public final class TriageService {
         this.model = model;
         this.config = config;
         this.index = index;
+        this.policies = policies == null ? PolicyIndex.empty() : policies;
+        this.policyRetrieval = true;
+    }
+
+    /** The same service with policy documents attached; used when the repository has them. */
+    public TriageService withPolicies(PolicyIndex index) {
+        return new TriageService(model, config, screening, parser, rules, this.index, index);
+    }
+
+    /**
+     * The same service with policy retrieval turned off. This exists to measure what the policy
+     * documents are worth: run the same corpus with and without, and compare the two reports. A
+     * switch you cannot flip is not an experiment.
+     */
+    public TriageService withoutPolicies() {
+        TriageService off = new TriageService(model, config, screening, parser, rules, index);
+        return new TriageService(off, false);
+    }
+
+    private TriageService(TriageService other, boolean policyRetrieval) {
+        this.model = other.model;
+        this.config = other.config;
+        this.screening = other.screening;
+        this.parser = other.parser;
+        this.mapper = other.mapper;
+        this.detector = other.detector;
+        this.rules = other.rules;
+        this.tierPolicy = other.tierPolicy;
+        this.assembler = other.assembler;
+        this.index = other.index;
+        this.policies = other.policies;
+        this.policyRetrieval = policyRetrieval;
+    }
+
+    /** Visible for tests: whether this instance may still load docs/policies on its own. */
+    boolean policyRetrieval() {
+        return policyRetrieval;
     }
 
     public static TriageService offline() {
@@ -102,21 +158,41 @@ public final class TriageService {
      * back something a reviewer believes screening got wrong, without editing code and restarting.
      */
     public TriageService including(List<String> includePaths) {
-        return new TriageService(model, config, new Screening(includePaths), parser, rules, index);
+        TriageService widened =
+                new TriageService(model, config, new Screening(includePaths), parser, rules, index);
+        return new TriageService(widened, policyRetrieval);
     }
 
     public TriagePlan triage(Path repositoryPath, String baseRevision, String headRevision) throws IOException {
         List<FileChange> changes = new RepositoryChangeSource().changes(repositoryPath, baseRevision, headRevision);
         SymbolIndex repositoryIndex = new IndexBuilder(parser).build(repositoryPath).index();
-        return plan(changes, baseRevision, headRevision, repositoryIndex);
+        return plan(changes, baseRevision, headRevision, repositoryIndex,
+                policyRetrieval && policies.isEmpty() ? loadPolicies(repositoryPath) : policies);
+    }
+
+    /**
+     * Policy documents live with the code they govern, under {@code docs/policies}. A repository
+     * without them, or an embedding endpoint that is down, produces an empty index: the review
+     * simply has no policy signal, which is a normal state and never a failed run.
+     */
+    private static PolicyIndex loadPolicies(Path repositoryPath) {
+        Path directory = repositoryPath.resolve("docs").resolve("policies");
+        if (!java.nio.file.Files.isDirectory(directory)) {
+            return PolicyIndex.empty();
+        }
+        try {
+            return PolicyIndex.build(PolicyLibrary.load(directory), OllamaEmbedder.fromEnvironment());
+        } catch (RuntimeException unavailable) {
+            return PolicyIndex.empty();
+        }
     }
 
     public TriagePlan triage(List<FileChange> changes, String baseRevision, String headRevision) {
-        return plan(changes, baseRevision, headRevision, index);
+        return plan(changes, baseRevision, headRevision, index, policies);
     }
 
     private TriagePlan plan(List<FileChange> changes, String baseRevision, String headRevision,
-                            SymbolIndex symbolIndex) {
+                            SymbolIndex symbolIndex, PolicyIndex policyIndex) {
         List<ScreenedFile> skipped = new ArrayList<>();
         List<FileChange> reviewed = new ArrayList<>();
         List<AnalysisUnit> units = new ArrayList<>();
@@ -141,7 +217,7 @@ public final class TriageService {
         AtomicInteger modelCalls = new AtomicInteger();
         AtomicInteger unparsed = new AtomicInteger();
         List<PlanAssembler.Candidate> candidates = assessAll(units, modelCalls, unparsed, symbolIndex,
-                warningsByPath);
+                warningsByPath, policyIndex);
 
         PlanAssembler.Result assembled = assembler.assemble(candidates, config.maxInvestigateUnits());
 
@@ -160,7 +236,8 @@ public final class TriageService {
 
     private List<PlanAssembler.Candidate> assessAll(List<AnalysisUnit> units, AtomicInteger modelCalls,
                                                     AtomicInteger unparsed, SymbolIndex symbolIndex,
-                                                    java.util.Map<String, List<StaticWarning>> warningsByPath) {
+                                                    java.util.Map<String, List<StaticWarning>> warningsByPath,
+                                                    PolicyIndex policyIndex) {
         if (units.isEmpty()) {
             return List.of();
         }
@@ -169,7 +246,7 @@ public final class TriageService {
             for (AnalysisUnit unit : units) {
                 List<StaticWarning> warnings = warningsFor(unit, warningsByPath);
                 futures.add(executor.submit(
-                        () -> assessOne(unit, modelCalls, unparsed, symbolIndex, warnings)));
+                        () -> assessOne(unit, modelCalls, unparsed, symbolIndex, warnings, policyIndex)));
             }
             List<PlanAssembler.Candidate> candidates = new ArrayList<>(units.size());
             for (Future<PlanAssembler.Candidate> future : futures) {
@@ -185,16 +262,19 @@ public final class TriageService {
     }
 
     private PlanAssembler.Candidate assessOne(AnalysisUnit unit, AtomicInteger modelCalls, AtomicInteger unparsed,
-                                              SymbolIndex symbolIndex, List<StaticWarning> warnings) {
+                                              SymbolIndex symbolIndex, List<StaticWarning> warnings,
+                                              PolicyIndex policyIndex) {
         StructuralDeltaDetector.Detection detection = detector.detect(unit);
         if (!detection.parsed()) {
             unparsed.incrementAndGet();
         }
-        RuleContext context = new RuleContext(unit, detection.changes(), warnings);
+        List<PolicyHit> policyHits = policyIndex.search(
+                PolicyQuery.of(unit, detection.changes()), POLICY_TOP_K, POLICY_MIN_SCORE);
+        RuleContext context = new RuleContext(unit, detection.changes(), warnings, policyHits);
         List<RuleHit> hits = rules.evaluate(context);
         TierPolicy.Decision decision = tierPolicy.decide(context, hits);
 
-        String facts = factsFor(unit, symbolIndex, warnings);
+        String facts = factsFor(unit, symbolIndex, warnings, policyHits);
         UnitAssessment assessment;
         if (decision.tier() == Tier.SKIP) {
             assessment = UnitAssessment.declining(decision.reason());
@@ -240,18 +320,28 @@ public final class TriageService {
      * The index answers name-level questions only. When it cannot find the symbol the prompt
      * stays silent rather than guessing, so the model never receives a fact nobody computed.
      */
-    private static String factsFor(AnalysisUnit unit, SymbolIndex index, List<StaticWarning> warnings) {
+    private static String factsFor(AnalysisUnit unit, SymbolIndex index, List<StaticWarning> warnings,
+                                   List<PolicyHit> policyHits) {
         String symbolFacts = "";
         if (!index.isEmpty()) {
             SymbolFacts facts = index.factsFor(simpleName(unit.name()));
             symbolFacts = facts.isEmpty() ? "" : facts.describe();
         }
-        if (warnings.isEmpty()) {
-            return symbolFacts;
+        StringBuilder facts = new StringBuilder(symbolFacts);
+        if (!warnings.isEmpty()) {
+            String reported = warnings.stream().map(StaticWarning::describe)
+                    .collect(java.util.stream.Collectors.joining("；"));
+            facts.append(facts.isEmpty() ? "" : " ").append("静态检查在新增代码上报告：")
+                    .append(reported).append("。");
         }
-        String reported = warnings.stream().map(StaticWarning::describe)
-                .collect(java.util.stream.Collectors.joining("；"));
-        return (symbolFacts.isEmpty() ? "" : symbolFacts + " ") + "静态检查在新增代码上报告：" + reported + "。";
+        if (!policyHits.isEmpty()) {
+            facts.append(facts.isEmpty() ? "" : " ")
+                    .append("政策文档相关段落（这是规范摘录，不是代码证据）：");
+            for (PolicyHit hit : policyHits) {
+                facts.append(hit.describe()).append("；");
+            }
+        }
+        return facts.toString();
     }
 
     /**

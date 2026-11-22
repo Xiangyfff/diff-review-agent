@@ -98,6 +98,7 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
                         .append(" | ").append(unit.toolCalls())
                         .append(" | ").append(unit.findings())
                         .append(unit.sampled() ? " (抽查)" : "")
+                        .append(unit.policies().isEmpty() ? "" : " " + String.join(",", unit.policies()))
                         .append(" |\n");
             }
             out.append('\n');
@@ -157,6 +158,8 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
             node.put("findings", unit.findings());
             node.put("verifyCalls", unit.verifyCalls());
             node.put("sampled", unit.sampled());
+            ArrayNode policies = node.putArray("policies");
+            unit.policies().forEach(policies::add);
             ArrayNode abandoned = node.putArray("abandoned");
             unit.abandoned().forEach(abandoned::add);
         }
