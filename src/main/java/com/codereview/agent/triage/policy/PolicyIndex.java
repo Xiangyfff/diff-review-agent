@@ -22,6 +22,7 @@ public final class PolicyIndex {
     private final float[][] vectors;
     private final Embedder embedder;
     private final int embedFailures;
+    private final Scoring scoring;
 
     private static final double LEXICAL_WEIGHT = 0.25;
     private static final java.util.regex.Pattern IDENTIFIER =
@@ -31,15 +32,26 @@ public final class PolicyIndex {
             "final", "import", "package", "this", "that", "with", "from", "statement", "statements",
             "changed", "guard", "code", "file", "true", "false", "null");
 
-    private PolicyIndex(List<PolicyChunk> chunks, float[][] vectors, Embedder embedder, int embedFailures) {
+    /**
+     * How a chunk is scored. Two modes exist so the eval can measure what the lexical bonus is
+     * worth: an interview answer about the bonus should cite two rows, not a feeling.
+     */
+    public enum Scoring {
+        EMBEDDING_ONLY,
+        LEXICAL
+    }
+
+    private PolicyIndex(List<PolicyChunk> chunks, float[][] vectors, Embedder embedder,
+                        int embedFailures, Scoring scoring) {
         this.chunks = List.copyOf(chunks);
         this.vectors = vectors;
         this.embedder = embedder;
         this.embedFailures = embedFailures;
+        this.scoring = scoring;
     }
 
     public static PolicyIndex empty() {
-        return new PolicyIndex(List.of(), new float[0][], null, 0);
+        return new PolicyIndex(List.of(), new float[0][], null, 0, Scoring.LEXICAL);
     }
 
     /**
@@ -47,6 +59,10 @@ public final class PolicyIndex {
      * rather than indexed with a zero vector, because a zero vector would silently never match.
      */
     public static PolicyIndex build(PolicyLibrary library, Embedder embedder) {
+        return build(library, embedder, Scoring.LEXICAL);
+    }
+
+    public static PolicyIndex build(PolicyLibrary library, Embedder embedder, Scoring scoring) {
         if (library == null || library.isEmpty()) {
             return empty();
         }
@@ -66,7 +82,7 @@ public final class PolicyIndex {
                 failures++;
             }
         }
-        return new PolicyIndex(kept, keptVectors.toArray(new float[0][]), embedder, failures);
+        return new PolicyIndex(kept, keptVectors.toArray(new float[0][]), embedder, failures, scoring);
     }
 
     public boolean isEmpty() {
@@ -79,6 +95,10 @@ public final class PolicyIndex {
 
     public int embedFailures() {
         return embedFailures;
+    }
+
+    public Scoring scoring() {
+        return scoring;
     }
 
     public List<PolicyChunk> chunks() {
@@ -106,7 +126,7 @@ public final class PolicyIndex {
         List<PolicyHit> hits = new ArrayList<>();
         for (int i = 0; i < vectors.length; i++) {
             double score = dot(probe, vectors[i]);
-            if (!queryTerms.isEmpty()) {
+            if (scoring == Scoring.LEXICAL && !queryTerms.isEmpty()) {
                 score += LEXICAL_WEIGHT * overlap(queryTerms, chunks.get(i));
             }
             if (score >= minScore) {
