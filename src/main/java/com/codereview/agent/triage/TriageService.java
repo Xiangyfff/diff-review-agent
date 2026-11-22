@@ -296,7 +296,8 @@ public final class TriageService {
             unparsed.incrementAndGet();
         }
         List<PolicyHit> policyHits = policyIndex.search(
-                PolicyQuery.of(unit, detection.changes()), POLICY_TOP_K, POLICY_MIN_SCORE);
+                PolicyQuery.prose(unit, detection.changes()), PolicyQuery.code(unit),
+                POLICY_TOP_K, Math.min(POLICY_MIN_SCORE, policyIndex.scoreCut()));
         RuleContext context = new RuleContext(unit, detection.changes(), warnings, policyHits);
         List<RuleHit> hits = rules.evaluate(context);
         TierPolicy.Decision decision = tierPolicy.decide(context, hits);

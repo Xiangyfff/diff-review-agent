@@ -99,10 +99,30 @@ public final class PolicyLibrary {
         String heading = null;
         boolean mandatory = false;
         StringBuilder body = new StringBuilder();
+        List<String> examples = new ArrayList<>();
+        StringBuilder sample = null;
         int counter = 0;
         for (String line : text.split("\\R")) {
+            boolean fence = line.strip().startsWith("```");
+            if (fence) {
+                if (sample == null) {
+                    sample = new StringBuilder();
+                    continue;
+                }
+                String code = sample.toString().strip();
+                if (!code.isEmpty()) {
+                    examples.add(code);
+                }
+                sample = null;
+                continue;
+            }
+            if (sample != null) {
+                sample.append(line).append('\n');
+                continue;
+            }
             if (line.startsWith("#")) {
-                if (heading != null && add(chunks, file, base, counter + 1, heading, mandatory, body.toString())) {
+                if (heading != null && add(chunks, file, base, counter + 1, heading, mandatory,
+                        body.toString(), examples)) {
                     counter++;
                 }
                 String raw = line.replaceAll("^#+\\s*", "");
@@ -110,29 +130,33 @@ public final class PolicyLibrary {
                 mandatory = isMandatory(raw);
                 heading = clean(raw);
                 body.setLength(0);
+                examples.clear();
                 continue;
             }
             body.append(line).append('\n');
         }
         if (heading != null) {
-            add(chunks, file, base, counter + 1, heading, mandatory, body.toString());
+            add(chunks, file, base, counter + 1, heading, mandatory, body.toString(), examples);
         } else if (!body.toString().isBlank()) {
-            add(chunks, file, base, 1, file, false, body.toString());
+            add(chunks, file, base, 1, file, false, body.toString(), examples);
         }
         return chunks;
     }
 
     private static boolean add(List<PolicyChunk> chunks, String file, String base, int counter,
-                               String heading, boolean mandatory, String body) {
+                               String heading, boolean mandatory, String body, List<String> examples) {
         String text = body.strip();
-        if (text.isEmpty() || text.length() < 12) {
-            // A heading with no text says nothing a reviewer could be held to.
+        if (text.isEmpty() && examples.isEmpty()) {
+            // A heading with neither prose nor a sample says nothing a reviewer could be held to.
+            return false;
+        }
+        if (!text.isEmpty() && text.length() < 12 && examples.isEmpty()) {
             return false;
         }
         if (text.length() > MAX_CHUNK_CHARS) {
             text = text.substring(0, MAX_CHUNK_CHARS);
         }
-        chunks.add(new PolicyChunk("pol-" + base + "-" + counter, file, heading, text, mandatory));
+        chunks.add(new PolicyChunk("pol-" + base + "-" + counter, file, heading, text, mandatory, examples));
         return true;
     }
 

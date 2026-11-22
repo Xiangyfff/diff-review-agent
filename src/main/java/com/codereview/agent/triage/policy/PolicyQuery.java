@@ -30,6 +30,27 @@ public final class PolicyQuery {
     private PolicyQuery() {
     }
 
+    /** The prose half of the query: what the change is, in words, with no code in it. */
+    public static String prose(AnalysisUnit unit, List<StructuralChange> changes) {
+        StringBuilder query = new StringBuilder();
+        query.append("文件 ").append(unit.file()).append("；");
+        query.append("改动的方法是 ").append(unit.name()).append("；");
+        query.append("结构变化：");
+        List<String> described = changes.stream().map(change -> describe(change.kind()))
+                .distinct().toList();
+        String details = String.join("、", described);
+        query.append(details.length() > MAX_DETAIL_CHARS
+                ? details.substring(0, MAX_DETAIL_CHARS) : details);
+        query.append("。");
+        return query.toString();
+    }
+
+    /** The code half of the query: the changed method itself, bounded. */
+    public static String code(AnalysisUnit unit) {
+        String after = unit.after() == null ? "" : unit.after().text();
+        return after.length() > MAX_CODE_CHARS ? after.substring(0, MAX_CODE_CHARS) : after;
+    }
+
     public static String of(AnalysisUnit unit, List<StructuralChange> changes) {
         String details = changes.stream()
                 .map(change -> describe(change.kind()))

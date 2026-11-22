@@ -19,7 +19,10 @@ import java.util.List;
 public final class PolicyIndex {
 
     private final List<PolicyChunk> chunks;
-    private final float[][] vectors;
+    /** One vector per chunk prose. */
+    private final float[][] proseVectors;
+    /** One vector per sample code block, aligned with {@link #chunks}; empty when unused. */
+    private final float[][][] sampleVectors;
     private final Embedder embedder;
     private final int embedFailures;
     private final Scoring scoring;
@@ -37,21 +40,26 @@ public final class PolicyIndex {
      * worth: an interview answer about the bonus should cite two rows, not a feeling.
      */
     public enum Scoring {
+        /** Prose only, no lexical help: the baseline worth quoting. */
         EMBEDDING_ONLY,
-        LEXICAL
+        /** Prose plus the identifier-overlap bonus. */
+        LEXICAL,
+        /** Prose plus sample code blocks, plus the identifier bonus. */
+        SAMPLES
     }
 
-    private PolicyIndex(List<PolicyChunk> chunks, float[][] vectors, Embedder embedder,
-                        int embedFailures, Scoring scoring) {
+    private PolicyIndex(List<PolicyChunk> chunks, float[][] proseVectors, float[][][] sampleVectors,
+                        Embedder embedder, int embedFailures, Scoring scoring) {
         this.chunks = List.copyOf(chunks);
-        this.vectors = vectors;
+        this.proseVectors = proseVectors;
+        this.sampleVectors = sampleVectors;
         this.embedder = embedder;
         this.embedFailures = embedFailures;
         this.scoring = scoring;
     }
 
     public static PolicyIndex empty() {
-        return new PolicyIndex(List.of(), new float[0][], null, 0, Scoring.LEXICAL);
+        return new PolicyIndex(List.of(), new float[0][], new float[0][][], null, 0, Scoring.LEXICAL);
     }
 
     /**
@@ -67,22 +75,34 @@ public final class PolicyIndex {
             return empty();
         }
         List<PolicyChunk> kept = new ArrayList<>();
-        List<float[]> keptVectors = new ArrayList<>();
+        List<float[]> keptProse = new ArrayList<>();
+        List<float[][]> keptSamples = new ArrayList<>();
         int failures = 0;
         for (PolicyChunk chunk : library.chunks()) {
             try {
-                float[] vector = embedder.embed(chunk.heading() + "\n" + chunk.text());
-                if (vector == null || vector.length == 0) {
+                List<float[]> samples = new ArrayList<>();
+                float[] prose = embedder.embed(chunk.heading() + "\n" + chunk.text());
+                if (prose == null || prose.length == 0) {
                     failures++;
                     continue;
                 }
+                if (scoring == Scoring.SAMPLES) {
+                    for (String sample : chunk.examples()) {
+                        float[] vector = embedder.embed(codeOnly(sample));
+                        if (vector != null && vector.length == prose.length) {
+                            samples.add(normalise(vector));
+                        }
+                    }
+                }
                 kept.add(chunk);
-                keptVectors.add(normalise(vector));
+                keptProse.add(normalise(prose));
+                keptSamples.add(samples.toArray(new float[0][]));
             } catch (RuntimeException failure) {
                 failures++;
             }
         }
-        return new PolicyIndex(kept, keptVectors.toArray(new float[0][]), embedder, failures, scoring);
+        return new PolicyIndex(kept, keptProse.toArray(new float[0][]),
+                keptSamples.toArray(new float[0][][]), embedder, failures, scoring);
     }
 
     public boolean isEmpty() {
@@ -101,6 +121,14 @@ public final class PolicyIndex {
         return scoring;
     }
 
+    /**
+     * The score cut for this index. Kept as a method because the eval compares scoring modes and a
+     * cut written into the caller would silently apply one mode's number to another.
+     */
+    public double scoreCut() {
+        return 0.55;
+    }
+
     public List<PolicyChunk> chunks() {
         return chunks;
     }
@@ -110,23 +138,54 @@ public final class PolicyIndex {
      * @param minScore cosine similarity below which a chunk is not returned at all
      */
     public List<PolicyHit> search(String query, int topK, double minScore) {
+        return search(query, query, topK, minScore);
+    }
+
+    /**
+     * Retrieval with the query split into its own two parts.
+     *
+     * <p>The document has prose and samples; so does the query. Prose is compared with prose and
+     * code with code. Matching a code change against prose was the original mistake: three password
+     * comparisons were retrieved as the neighbouring clause about authentication logs, because both
+     * mention passwords in prose.
+     */
+    public List<PolicyHit> search(String proseQuery, String codeQuery, int topK, double minScore) {
+        String query = proseQuery == null || proseQuery.isBlank() ? codeQuery : proseQuery;
         if (isEmpty() || query == null || query.isBlank() || topK <= 0) {
             return List.of();
         }
         float[] probe;
+        float[] codeProbe = null;
         try {
             probe = normalise(embedder.embed(query));
+            if (scoring == Scoring.SAMPLES && codeQuery != null && !codeQuery.isBlank()
+                    && !codeQuery.equals(query)) {
+                codeProbe = normalise(embedder.embed(codeQuery));
+            }
         } catch (RuntimeException unreachable) {
             return List.of();
         }
-        if (probe.length == 0 || probe.length != vectors[0].length) {
+        if (probe.length == 0 || probe.length != proseVectors[0].length) {
             return List.of();
+        }
+        if (codeProbe != null && codeProbe.length != probe.length) {
+            codeProbe = null;
         }
         java.util.Set<String> queryTerms = terms(query);
         List<PolicyHit> hits = new ArrayList<>();
-        for (int i = 0; i < vectors.length; i++) {
-            double score = dot(probe, vectors[i]);
-            if (scoring == Scoring.LEXICAL && !queryTerms.isEmpty()) {
+        for (int i = 0; i < proseVectors.length; i++) {
+            double proseScore = dot(probe, proseVectors[i]);
+            double score = proseScore;
+            if (codeProbe != null && sampleVectors[i].length > 0) {
+                double codeScore = -1;
+                for (float[] sample : sampleVectors[i]) {
+                    codeScore = Math.max(codeScore, dot(codeProbe, sample));
+                }
+                // A clause with samples is scored on its samples: the change is code, and the prose
+                // a clause shares with its neighbours is exactly what confused the ranking.
+                score = codeScore;
+            }
+            if (scoring != Scoring.EMBEDDING_ONLY && !queryTerms.isEmpty()) {
                 score += LEXICAL_WEIGHT * overlap(queryTerms, chunks.get(i));
             }
             if (score >= minScore) {
@@ -137,9 +196,52 @@ public final class PolicyIndex {
         return hits.size() <= topK ? hits : hits.subList(0, topK);
     }
 
+    /**
+     * Per-chunk scores for a query, for the eval probe only: ranking a miss needs the numbers, not
+     * a guess. The pipeline never calls this.
+     */
+    public java.util.List<String> explainScores(String proseQuery, String codeQuery) {
+        if (isEmpty()) {
+            return java.util.List.of();
+        }
+        float[] proseProbe = normalise(embedder.embed(proseQuery));
+        float[] codeProbe = codeQuery == null || codeQuery.isBlank()
+                ? null : normalise(embedder.embed(codeQuery));
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        for (int i = 0; i < proseVectors.length; i++) {
+            double proseScore = dot(proseProbe, proseVectors[i]);
+            double codeScore = -1;
+            for (float[] sample : sampleVectors[i]) {
+                codeScore = Math.max(codeScore, dot(codeProbe, sample));
+            }
+            lines.add(String.format("%s prose=%.3f code=%.3f samples=%d", chunks.get(i).id(),
+                    proseScore, codeScore, sampleVectors[i].length));
+        }
+        return lines;
+    }
+
     /** The mandatory chunks among the hits; these are what gate the tier. */
     public static List<PolicyHit> mandatory(List<PolicyHit> hits) {
         return hits.stream().filter(hit -> hit.chunk().mandatory()).toList();
+    }
+
+    /**
+     * A sample with its comment lines removed. The comments in a policy document are written in
+     * prose about the rule, so embedding them drags the sample back into prose space — which is
+     * exactly the cross-modal confusion the samples exist to avoid.
+     */
+    private static String codeOnly(String sample) {
+        StringBuilder code = new StringBuilder();
+        for (String line : sample.split("\\R")) {
+            String stripped = line.strip();
+            if (stripped.startsWith("//") || stripped.startsWith("/*") || stripped.startsWith("*")
+                    || stripped.startsWith("*/")) {
+                continue;
+            }
+            code.append(line).append('\n');
+        }
+        String result = code.toString().strip();
+        return result.isEmpty() ? sample : result;
     }
 
     /** Identifier-shaped terms in a text, lower-cased and minus the words every method signature has. */

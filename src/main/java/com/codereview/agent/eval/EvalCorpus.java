@@ -45,10 +45,32 @@ public final class EvalCorpus {
                 认证失败时只记录用户名与失败原因。不得记录口令、口令散列、令牌或会话标识，
                 也不得把它们拼进异常消息。排查需要的字段是时间、用户名、来源地址与失败原因。
 
+                ```java
+                // 反例：把口令写进了日志
+                log.warn("auth failed for {} pwd={}", account, secret);
+                ```
+
+                ```java
+                // 正例：只说谁失败了、为什么
+                log.warn("auth failed for {} from {}", account, remoteAddress);
+                ```
+
                 ## [强制] 口令比较
 
                 口令必须使用恒定时间的比较方式，禁止使用 equals 或 equalsIgnoreCase，
                 因为逐字符比较会在第一个不同的字符处返回，泄漏可测量的时间差。
+
+                ```java
+                // 反例：逐字符比较，提前返回
+                if (storedPassword.equals(submitted)) {
+                    return true;
+                }
+                ```
+
+                ```java
+                // 正例：恒定时间比较
+                return MessageDigest.isEqual(storedDigest, digest(submitted));
+                ```
 
                 ## 会话有效期
 
@@ -64,6 +86,16 @@ public final class EvalCorpus {
 
                 生产代码使用日志框架，不允许 System.out 或 System.err。标准输出在容器里
                 没有级别、没有结构化字段，也无法被集中采集。
+
+                ```java
+                // 反例
+                System.out.println("reconciled " + rows + " rows");
+                ```
+
+                ```java
+                // 正例
+                log.info("reconciled {} rows", rows);
+                ```
 
                 ## 日志字段
 
