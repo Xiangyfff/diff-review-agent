@@ -6,6 +6,8 @@ import com.codereview.agent.investigate.InvestigationState;
 import com.codereview.agent.investigate.ModelTurn;
 import com.codereview.agent.investigate.Question;
 import com.codereview.agent.investigate.Toolbox;
+import com.codereview.agent.triage.model.AuthorIntent;
+import com.codereview.agent.triage.model.ChangeOverview;
 import com.codereview.agent.verify.VerificationRequest;
 import org.junit.jupiter.api.Test;
 
@@ -52,5 +54,43 @@ class PromptHintsTest {
         String prompt = request.render();
 
         assertThat(prompt).contains("已经做过的工具调用").contains("no excerpt");
+    }
+
+    @Test
+    void theAuthorDescriptionReachesTheIntentScanAsAClaim() {
+        List<String> prompts = new ArrayList<>();
+        Chat chat = (system, user) -> {
+            prompts.add(user);
+            return "{\"intent\":\"fix a null guard\",\"crossFileConcerns\":[]}";
+        };
+        ChangeOverview overview = new ChangeOverview(
+                List.of(new ChangeOverview.FileSummary("src/A.java", 2, 3,
+                        List.of("A.find"), List.of())),
+                2, 3, 1,
+                new AuthorIntent("修空指针", "只改了 A.find 的判空", "owner/name#7"));
+
+        new LangChain4jTriageModel(chat).summarize(overview);
+
+        assertThat(prompts).hasSize(1);
+        assertThat(prompts.get(0)).contains("作者对这次改动的说明")
+                .contains("不是证据")
+                .contains("只改了 A.find 的判空");
+    }
+
+    @Test
+    void anAuthorDescriptionOfOnlyWhitespaceAddsNothingToThePrompt() {
+        List<String> prompts = new ArrayList<>();
+        Chat chat = (system, user) -> {
+            prompts.add(user);
+            return "{\"intent\":\"x\",\"crossFileConcerns\":[]}";
+        };
+        ChangeOverview overview = new ChangeOverview(
+                List.of(new ChangeOverview.FileSummary("src/A.java", 1, 0, List.of("A.find"), List.of())),
+                1, 0, 1,
+                AuthorIntent.fromText("   \n  \n", "file"));
+
+        new LangChain4jTriageModel(chat).summarize(overview);
+
+        assertThat(prompts.get(0)).doesNotContain("作者对这次改动的说明");
     }
 }

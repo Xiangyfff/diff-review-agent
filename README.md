@@ -6,7 +6,7 @@
     <img src="https://img.shields.io/badge/LangChain4j-1.24-6DB33F?style=flat-square" alt="LangChain4j 1.24">
     <img src="https://img.shields.io/badge/JGit-5.13-DC382D?style=flat-square" alt="JGit">
     <img src="https://img.shields.io/badge/JavaParser-3.26-4479A1?style=flat-square" alt="JavaParser">
-    <img src="https://img.shields.io/badge/tests-177%20passing-2ea44f?style=flat-square" alt="177 tests">
+    <img src="https://img.shields.io/badge/tests-182%20passing-2ea44f?style=flat-square" alt="182 tests">
     <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT License"></a>
   </p>
 </div>
@@ -132,6 +132,25 @@ java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner targe
 报告写到 `eval/run/latest-report.md`；去掉 `--real` 用离线替身，不花钱也不需要密钥。
 
 
+
+## 作者说的意图
+
+PR 的标题和描述是作者自己写的意图。不接进来，整体扫描只能从文件清单、方法名、被删的代码去猜这次改动为了什么；接进来，就能拿真意图对照改动，比如描述说「只改了日志」而实际动了事务边界。
+
+两条入口，都不需要协议：
+
+```bash
+# 从 GitHub 读一个 PR（可选 CODEREVIEW_GITHUB_TOKEN，测试用 CODEREVIEW_GITHUB_API 指向本地桩）
+java -cp "target/classes;<classpath>" com.codereview.agent.review.ReviewPipeline <repo> <base> <head> out --pr owner/name#123
+
+# 或从本地文件读，第一行是标题，其余是描述
+java -cp "target/classes;<classpath>" com.codereview.agent.review.ReviewPipeline <repo> <base> <head> out --description note.txt
+```
+
+这段文字进的是意图扫描的提示词，标明「作者自己的说法，不是证据」，并要求「改动和说明不一致就写进跨文件疑点」。它不进证据库，也不参与结论的证据校验——描述可以撒谎，证据编号不行。
+
+**为什么不是 MCP。** MCP 解决的是跨进程、跨产品的工具发现与调用；这里只是读一个文档，加一层协议要多一个子进程、一套序列化、一类新的失败模式，换不到任何东西。写进简历的说法是：知道 MCP 与普通 HTTP 的边界，不为一个请求引入协议。
+
 ## 政策检索
 
 仓库里可以放一份 `docs/policies/*.md`，写这个项目的硬性规定。初审把每个改动单元拿到这些条款里检索，命中的条款作为「规范摘录」贴进提示词，并且标了 `[强制]` 的条款直接把单元推进必查档——不问模型的意见。
@@ -163,7 +182,7 @@ java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner targe
 | 取证 | JGit、JavaParser、JavaParser Symbol Solver | diff 与重命名、语法树比对、类型级调用图 |
 | 模型 | LangChain4j 1.24、强制工具调用 | 四种回复全部走 JSON Schema 约束的工具调用；全项目只有一个类 import 该 SDK |
 | 输出 | Jackson、GitHub REST | 计划与报告序列化、Pull Request 行内评论 |
-| 评测 | JUnit 5、AssertJ、变异体语料 | 177 个测试，全程离线；评估与消融各自可复现 |
+| 评测 | JUnit 5、AssertJ、变异体语料 | 182 个测试，全程离线；评估与消融各自可复现 |
 
 ## 本地运行
 
@@ -183,7 +202,7 @@ java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner targe
 mvn test
 ```
 
-177 个用例，全用离线确定性替身，不联网、不花钱。
+182 个用例，全用离线确定性替身，不联网、不花钱。
 
 ### 2. 审一次真实提交
 

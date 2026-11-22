@@ -12,7 +12,12 @@ public record ChangeOverview(
         List<FileSummary> files,
         int addedLines,
         int removedLines,
-        int unitCount) {
+        int unitCount,
+        AuthorIntent authorIntent) {
+
+    public ChangeOverview(List<FileSummary> files, int addedLines, int removedLines, int unitCount) {
+        this(files, addedLines, removedLines, unitCount, AuthorIntent.empty());
+    }
 
     public record FileSummary(
             String path,
@@ -29,5 +34,6 @@ public record ChangeOverview(
 
     public ChangeOverview {
         files = List.copyOf(files);
+        authorIntent = authorIntent == null ? AuthorIntent.empty() : authorIntent;
     }
 }

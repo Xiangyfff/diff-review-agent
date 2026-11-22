@@ -79,6 +79,9 @@ public final class TriageService {
     /** Whether a repository without attached policies may still load them from docs/policies. */
     private final boolean policyRetrieval;
 
+    /** What the author says the change is for, if anyone said it. */
+    private final com.codereview.agent.triage.model.AuthorIntent authorIntent;
+
     /** At most this many policy excerpts reach one unit, and only above the score cut. */
     private static final int POLICY_TOP_K = 3;
     private static final double POLICY_MIN_SCORE = 0.55;
@@ -112,6 +115,7 @@ public final class TriageService {
         this.index = index;
         this.policies = policies == null ? PolicyIndex.empty() : policies;
         this.policyRetrieval = true;
+        this.authorIntent = com.codereview.agent.triage.model.AuthorIntent.empty();
     }
 
     /** The same service with policy documents attached; used when the repository has them. */
@@ -142,6 +146,29 @@ public final class TriageService {
         this.index = other.index;
         this.policies = other.policies;
         this.policyRetrieval = policyRetrieval;
+        this.authorIntent = other.authorIntent;
+    }
+
+    /** The same service carrying the author's own description of the change. */
+    public TriageService withAuthorIntent(com.codereview.agent.triage.model.AuthorIntent intent) {
+        TriageService carrying = new TriageService(this, policyRetrieval);
+        return new TriageService(carrying, intent);
+    }
+
+    private TriageService(TriageService other, com.codereview.agent.triage.model.AuthorIntent intent) {
+        this.model = other.model;
+        this.config = other.config;
+        this.screening = other.screening;
+        this.parser = other.parser;
+        this.mapper = other.mapper;
+        this.detector = other.detector;
+        this.rules = other.rules;
+        this.tierPolicy = other.tierPolicy;
+        this.assembler = other.assembler;
+        this.index = other.index;
+        this.policies = other.policies;
+        this.policyRetrieval = other.policyRetrieval;
+        this.authorIntent = intent == null ? com.codereview.agent.triage.model.AuthorIntent.empty() : intent;
     }
 
     /** Visible for tests: whether this instance may still load docs/policies on its own. */
@@ -224,7 +251,7 @@ public final class TriageService {
         IntentSummary intent = IntentSummary.empty();
         if (!units.isEmpty()) {
             modelCalls.incrementAndGet();
-            intent = model.summarize(overview(reviewed, assembled.units()));
+            intent = model.summarize(overview(reviewed, assembled.units(), authorIntent));
         }
 
         TriageStats stats = stats(changes.size(), List.copyOf(skipped), assembled.units(),
@@ -375,7 +402,8 @@ public final class TriageService {
         return dot >= 0 ? head.substring(dot + 1) : head;
     }
 
-    private static ChangeOverview overview(List<FileChange> files, List<PlannedUnit> units) {
+    private static ChangeOverview overview(List<FileChange> files, List<PlannedUnit> units,
+                                          com.codereview.agent.triage.model.AuthorIntent authorIntent) {
         Map<String, List<PlannedUnit>> byPath = new LinkedHashMap<>();
         for (PlannedUnit unit : units) {
             byPath.computeIfAbsent(unit.unit().file(), path -> new ArrayList<>()).add(unit);
@@ -397,7 +425,7 @@ public final class TriageService {
             summaries.add(new ChangeOverview.FileSummary(file.displayPath(), fileAdded, fileRemoved,
                     changedUnits, removedDeclarations));
         }
-        return new ChangeOverview(summaries, added, removed, units.size());
+        return new ChangeOverview(summaries, added, removed, units.size(), authorIntent);
     }
 
     private static TriageStats stats(int filesSeen, List<ScreenedFile> skipped,

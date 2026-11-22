@@ -56,6 +56,9 @@ public final class MockTriageModel implements TriageModel {
                 : "本次改动涉及 " + overview.files().size() + " 个文件、"
                 + overview.unitCount() + " 个分析单元，共增加 " + overview.addedLines()
                 + " 行、删除 " + overview.removedLines() + " 行";
+        if (!overview.authorIntent().isEmpty()) {
+            intent = intent + "（作者说明：" + overview.authorIntent().title() + "）";
+        }
         return new IntentSummary(intent, concerns);
     }
 

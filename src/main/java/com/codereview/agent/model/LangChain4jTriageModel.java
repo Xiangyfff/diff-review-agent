@@ -82,6 +82,11 @@ public final class LangChain4jTriageModel implements TriageModel {
 
     private static String render(ChangeOverview overview) {
         StringBuilder text = new StringBuilder();
+        if (!overview.authorIntent().isEmpty()) {
+            text.append(overview.authorIntent().describe()).append("\n")
+                    .append("如果改动和这段说明不一致，把不一致写进 crossFileConcerns；")
+                    .append("不要因为说明里提到某件事就认为代码真的做了。\n\n");
+        }
         text.append("本次改动共 ").append(overview.files().size()).append(" 个文件，")
                 .append(overview.unitCount()).append(" 个分析单元，增加 ")
                 .append(overview.addedLines()).append(" 行、删除 ")

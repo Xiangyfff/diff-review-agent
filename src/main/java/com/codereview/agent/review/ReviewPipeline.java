@@ -49,11 +49,19 @@ public final class ReviewPipeline {
     private final InvestigateConfig investigateConfig;
     private Sampling sampling = Sampling.OFF;
     private boolean policyRetrieval = true;
+    private com.codereview.agent.triage.model.AuthorIntent authorIntent =
+            com.codereview.agent.triage.model.AuthorIntent.empty();
     private final VerifyConfig verifyConfig;
     private final ModelFactory models;
     private final String modelDescription;
 
     /** Mutable on purpose: the demo sets it once before running and nothing else touches it. */
+    /** The author's own description of the change, handed to the intent scan as a claim. */
+    public ReviewPipeline authorIntent(com.codereview.agent.triage.model.AuthorIntent intent) {
+        this.authorIntent = intent == null ? com.codereview.agent.triage.model.AuthorIntent.empty() : intent;
+        return this;
+    }
+
     /** Turn policy retrieval off; used to measure what the policy documents contribute. */
     public ReviewPipeline policyRetrieval(boolean enabled) {
         this.policyRetrieval = enabled;
@@ -125,7 +133,7 @@ public final class ReviewPipeline {
     public ReviewReport run(Path repository, String baseRevision, String headRevision, Depth depth,
             List<String> includePaths) throws IOException {
         TriageService effectiveTriage = policyRetrieval ? triage : triage.withoutPolicies();
-        TriagePlan plan = effectiveTriage.including(includePaths)
+        TriagePlan plan = effectiveTriage.withAuthorIntent(authorIntent).including(includePaths)
                 .triage(repository, baseRevision, headRevision);
         List<PlannedUnit> scheduled = plan.scheduled();
         // Sampling needs the tools, so a triage-only run measures nothing here and says so.
@@ -289,7 +297,7 @@ public final class ReviewPipeline {
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
             System.err.println("usage: ReviewPipeline <repository> <base> <head> [output-directory]"
-                    + " [--real | --ollama]");
+                    + " [--real | --ollama] [--pr owner/name#123 | --description <file>]");
             System.exit(2);
         }
         Path repository = Path.of(args[0]);
@@ -299,6 +307,26 @@ public final class ReviewPipeline {
         ReviewPipeline pipeline = models == null
                 ? ReviewPipeline.offline()
                 : new ReviewPipeline(models, InvestigateConfig.defaults(), VerifyConfig.defaults());
+        for (int i = 0; i < args.length; i++) {
+            if ("--description".equals(args[i]) && i + 1 < args.length) {
+                Path file = Path.of(args[i + 1]);
+                pipeline.authorIntent(com.codereview.agent.triage.model.AuthorIntent
+                        .fromText(Files.readString(file, StandardCharsets.UTF_8), file.toString()));
+            } else if ("--pr".equals(args[i]) && i + 1 < args.length) {
+                String spec = args[i + 1];
+                int hash = spec.lastIndexOf('#');
+                if (hash < 0) {
+                    System.err.println("--pr expects owner/name#number, got " + spec);
+                    System.exit(2);
+                }
+                int number = Integer.parseInt(spec.substring(hash + 1));
+                pipeline.authorIntent(com.codereview.agent.intake.GitHubPullRequest
+                        .fetch(spec.substring(0, hash), number));
+            }
+        }
+        if (!pipeline.authorIntent.isEmpty()) {
+            System.out.println("author description: " + pipeline.authorIntent.title());
+        }
         ReviewReport report = pipeline.run(repository, args[1], args[2]);
         Files.createDirectories(output);
         Files.writeString(output.resolve("review.md"), report.renderMarkdown(),
