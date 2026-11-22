@@ -29,6 +29,9 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
             一条结论只有在你能说清「哪里有问题、作者要改什么或确认什么」时才成立。
             只复述这次改了什么（比如「签名从 A 变成了 B」「注解没变」）不是结论，那种情况请改用 abandon，
             理由写「检查后确认这里没有问题：…」。如果查完发现确实没毛病，也必须 abandon，不要为了交差硬凑结论。
+            但「查完」的意思是至少读过改动所在的代码：还没有调用过任何工具就放弃，等于没查，
+            这种情况下请先用 read_lines 读改动前后的方法，再决定。改动涉及删除或削弱防御性检查时，
+            除非真的读到了明确保证（上游判空、非空注解、构造器校验），否则不要放弃，改为用 confirm 让作者确认。
             唯一的例外是「仓库里找不到调用方」：先用 public_surface 看这个声明对外是否可达。如果它是 public，
             那么仓库外的调用方本来就看不见，不能据此放弃——改用 confirm 请作者确认外部调用方是否已同步，
             或者用 fix 指出需要一起改的地方；只有当它确实不可从外部调用时，空的调用列表才算「没人用」。
@@ -152,9 +155,11 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
 
     private static final String SHAPE = """
             只输出下面三种之一，不要输出其他任何内容：
-            {"action":"tool","question":"q1","tool":"read_lines","arguments":{"path":"路径","start":"10","end":"40"}}
-            {"action":"abandon","question":"q1","reason":"为什么现在无法回答"}
-            {"action":"conclude","question":"q1","statement":"一句话说清问题和要改什么","demand":"fix","evidence":["ev-1"],"line":42}
+            {"action":"tool","question":"q1","tool":"read_lines","arguments":{"path":"<仓库内相对路径>","start":"<起始行>","end":"<结束行>"}}
+            {"action":"abandon","question":"q1","reason":"<查了什么、为什么还是回答不了>"}
+            {"action":"conclude","question":"q1","statement":"<一句话说清问题和要改什么>","demand":"fix","evidence":["ev-1"],"line":42}
+
+            尖括号里是说明，不是要照抄的文字：每一处都要换成你自己写的内容。
 
             demand 只能是 fix 或 confirm：改代码能解决就用 fix（例如「这里少了一个空判，`order` 可能为 null」）；
             必须由作者判断、代码本身不一定是错的用 confirm（例如「这个重载被外部模块调用，请确认调用方已同步」）。

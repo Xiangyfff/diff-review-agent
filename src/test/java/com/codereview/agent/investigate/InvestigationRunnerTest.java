@@ -75,6 +75,44 @@ class InvestigationRunnerTest {
     }
 
     @Test
+    void aModelThatGivesUpBeforeReadingIsMadeToReadOnceFirst() {
+        // The small local model does exactly this: abandons on turn one with no tool call. The
+        // runner turns that into one read of the changed lines and asks again.
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(
+                        new ModelTurn.Abandon("q1", "no need to look"),
+                        new ModelTurn.Conclude("q1",
+                                "`user` is dereferenced without its guard, so a null caller now fails.",
+                                List.of("ev-1"), 12, ModelTurn.Conclude.FIX)),
+                new Toolbox(List.of(new FixedTool(true))),
+                InvestigateConfig.defaults());
+
+        InvestigationResult result = runner.investigate(task("Is this value still allowed to be null?"));
+
+        assertThat(result.findings()).hasSize(1);
+        assertThat(result.toolCalls()).isEqualTo(1);
+        assertThat(result.attempts()).anyMatch(attempt -> attempt.startsWith("primed "));
+        assertThat(result.abandoned()).isEmpty();
+    }
+
+    @Test
+    void thePrimedReadDoesNotHappenTwiceAndAnAbandonStillClosesTheQuestion() {
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(
+                        new ModelTurn.Abandon("q1", "no need to look"),
+                        new ModelTurn.Abandon("q1", "still no need")),
+                new Toolbox(List.of(new FixedTool(true))),
+                InvestigateConfig.defaults());
+
+        InvestigationResult result = runner.investigate(task("Is this value still allowed to be null?"));
+
+        assertThat(result.toolCalls()).isEqualTo(1);
+        assertThat(result.attempts()).anyMatch(attempt -> attempt.startsWith("primed "));
+        assertThat(result.abandoned()).hasSize(1);
+        assertThat(result.abandoned().get(0).reason()).contains("still no need");
+    }
+
+    @Test
     void concludesWhenTheModelCitesEvidenceItActuallyRead() {
         InvestigationRunner runner = new InvestigationRunner(
                 new Scripted(
@@ -124,7 +162,9 @@ class InvestigationRunnerTest {
     @Test
     void recordsAnAbandonedQuestionWithItsReason() {
         InvestigationRunner runner = new InvestigationRunner(
-                new Scripted(new ModelTurn.Abandon("q1", "仓库里找不到这个接口的实现")),
+                new Scripted(
+                        new ModelTurn.CallTool("q1", read()),
+                        new ModelTurn.Abandon("q1", "仓库里找不到这个接口的实现")),
                 new Toolbox(List.of(new FixedTool(true))),
                 InvestigateConfig.defaults());
 

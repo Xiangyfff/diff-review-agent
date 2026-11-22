@@ -47,6 +47,7 @@ public final class InvestigationRunner {
         String lastRejection = "";
         List<String> attempts = new ArrayList<>();
         Map<String, Integer> rejections = new HashMap<>();
+        boolean primed = false;
         InvestigationResult.Outcome outcome = InvestigationResult.Outcome.CONCLUDED;
 
         while (!open.isEmpty()) {
@@ -97,6 +98,16 @@ public final class InvestigationRunner {
                     break;
                 }
             } else if (turn instanceof ModelTurn.Abandon abandon) {
+                // "Nothing to see here" before looking at anything is not a finding, it is a model
+                // taking the cheap way out, and a small local one does it every time. Reading the
+                // changed lines is one call; making it the runner's decision rather than a request
+                // in the prompt is what keeps the guarantee mechanical.
+                if (!primed && toolCalls == 0 && attempts.isEmpty() && config.maxToolCalls() > 0) {
+                    primed = true;
+                    toolCalls++;
+                    attempts.add("primed " + runTool(primingCall(task), store));
+                    continue;
+                }
                 Optional<Question> question = remove(open, abandon.questionId());
                 if (question.isEmpty()) {
                     fruitless++;
@@ -178,6 +189,18 @@ public final class InvestigationRunner {
                 .forEach(entry -> text.append(entry.getKey()).append('=')
                         .append(entry.getValue()).append(';'));
         return text.append(')').toString();
+    }
+
+    /**
+     * The read the runner does itself when a model wants to give up without having read the
+     * change. Same tool and same evidence store, so a conclusion drawn afterwards still has to
+     * cite what the read produced.
+     */
+    private ToolCall primingCall(InvestigationTask task) {
+        return new ToolCall("read_lines", Map.of(
+                "path", task.file(),
+                "start", Integer.toString(task.line()),
+                "end", Integer.toString(unitEndLine(task))));
     }
 
     private static int unitEndLine(InvestigationTask task) {

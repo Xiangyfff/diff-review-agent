@@ -27,6 +27,31 @@ public final class ReviewModels implements ModelFactory {
         return new ReviewModels(Chat.openAiCompatible(settings), settings.describe());
     }
 
+    /**
+     * The same three stages served by a model on this machine. Offline in the sense that nothing
+     * leaves the box, but still a real model, so conclusions are not reproducible the way the
+     * stand-ins are.
+     */
+    public static ReviewModels local() {
+        ModelSettings settings = ModelSettings.ollama();
+        return new ReviewModels(Chat.openAiCompatible(settings), settings.describe());
+    }
+
+    /**
+     * What the command lines ask for: nothing means the deterministic stand-ins, {@code --real} the
+     * hosted model, {@code --ollama} the one on this machine. One place, so the flags cannot drift
+     * between the four entry points.
+     */
+    public static ReviewModels forArguments(java.util.List<String> arguments) {
+        if (arguments.contains("--ollama")) {
+            return local();
+        }
+        if (arguments.contains("--real")) {
+            return fromEnvironment();
+        }
+        return null;
+    }
+
     public TriageModel triage() {
         return new LangChain4jTriageModel(chat);
     }

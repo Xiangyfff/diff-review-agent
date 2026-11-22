@@ -6,7 +6,7 @@
     <img src="https://img.shields.io/badge/LangChain4j-1.24-6DB33F?style=flat-square" alt="LangChain4j 1.24">
     <img src="https://img.shields.io/badge/JGit-5.13-DC382D?style=flat-square" alt="JGit">
     <img src="https://img.shields.io/badge/JavaParser-3.26-4479A1?style=flat-square" alt="JavaParser">
-    <img src="https://img.shields.io/badge/tests-150%20passing-2ea44f?style=flat-square" alt="150 tests">
+    <img src="https://img.shields.io/badge/tests-157%20passing-2ea44f?style=flat-square" alt="157 tests">
     <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="MIT License"></a>
   </p>
 </div>
@@ -140,7 +140,7 @@ java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner targe
 | 取证 | JGit、JavaParser、JavaParser Symbol Solver | diff 与重命名、语法树比对、类型级调用图 |
 | 模型 | LangChain4j 1.24、强制工具调用 | 四种回复全部走 JSON Schema 约束的工具调用；全项目只有一个类 import 该 SDK |
 | 输出 | Jackson、GitHub REST | 计划与报告序列化、Pull Request 行内评论 |
-| 评测 | JUnit 5、AssertJ、变异体语料 | 150 个测试，全程离线；评估与消融各自可复现 |
+| 评测 | JUnit 5、AssertJ、变异体语料 | 157 个测试，全程离线；评估与消融各自可复现 |
 
 ## 本地运行
 
@@ -151,6 +151,7 @@ java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner targe
 | JDK | 21 | 虚拟线程与 `record` 都要用到 |
 | Maven | 3.9 | 只用来构建；`mvn test` 不需要任何密钥 |
 | 模型密钥 | 可选 | 只有 `--real` 需要，读环境变量 |
+| Ollama | 可选 | 只有 `--ollama` 需要，本机自备模型 |
 | GitHub 令牌 | 可选 | 只有真发 PR 评论需要 |
 
 ### 1. 跑测试
@@ -159,7 +160,7 @@ java -cp "target/classes;<classpath>" com.codereview.agent.eval.EvalRunner targe
 mvn test
 ```
 
-150 个用例，全用离线确定性替身，不联网、不花钱。
+157 个用例，全用离线确定性替身，不联网、不花钱。
 
 ### 2. 审一次真实提交
 
@@ -196,7 +197,27 @@ export CODEREVIEW_LLM_API_KEY=...
 
 密钥只从环境变量读，不落仓库、不进日志；模型描述里只打印"模型 at 地址"。
 
-### 6. 回写 Pull Request
+### 6. 用本地模型（Ollama）
+
+```bash
+ollama pull qwen2.5-coder:3b
+OLLAMA_CONTEXT_LENGTH=8192 ollama serve
+java -cp "target/classes;<classpath>" com.codereview.agent.web.DemoServer --ollama
+```
+
+默认连 `http://127.0.0.1:11434/v1`、模型是 `qwen2.5-coder:3b`，可用 `CODEREVIEW_OLLAMA_BASE_URL` 与 `CODEREVIEW_OLLAMA_MODEL` 改。本地生成慢，记住把超时调大：
+
+```bash
+export CODEREVIEW_LLM_TIMEOUT_SECONDS=600
+```
+
+Ollama 默认上下文是 4096，而本项目的提示词会带上整段证据，所以启动服务时按 8192 开，否则长单元会被截断。
+
+实测数据来自一台只有 CPU 的机器：同一句话一次调用，3B 约 9 秒、7B 约 26 秒；审一个改动方法，3B 约 35 到 45 秒。7B 在这台机器上跑一个单元一小时没结束，所以默认模型是 3B，判断力换速度。
+
+有一个必须知道的行为：Ollama 的 OpenAI 兼容接口接受工具定义，却不返回 `tool_calls`。本项目第一次碰到就把同一份 schema 改成文字要求并继续跑，日志里会留一行提示。3B 能走完整个循环——真的调工具、真的记录放弃理由——但它判断不准，经常读完就说没问题；这时管线不会编造结论，只会留下一条基于规则的问题，证据为空并注明未取证得出。模型弱，输出就弱，但不会假。
+
+### 7. 回写 Pull Request
 
 ```bash
 java -cp "target/classes;<classpath>" com.codereview.agent.publish.PostReview      <仓库> <起点> <终点> <owner/name> <pull number> [--post]
@@ -214,6 +235,9 @@ java -cp "target/classes;<classpath>" com.codereview.agent.publish.PostReview   
 | 报 `CODEREVIEW_LLM_API_KEY is not set` | 没配密钥就用了 `--real`，去掉参数或先设环境变量 |
 | 报 `This response_format type is unavailable now` | 该模型不支持 `json_schema`，本项目已改用强制工具调用，不该再出现；若出现说明用了旧版本代码 |
 | 演示页提示没有评论 | 没有单元被排期，或结论都没通过证据校验；看单元表的「结局」列 |
+| `--ollama` 连不上 | 没启动 `ollama serve`，或端口不是 11434；用 `CODEREVIEW_OLLAMA_BASE_URL` 指过去 |
+| 本地模型答非所问、反复读同一处 | 上下文被截断或模型太小；按 8192 启动，先换 7B 试 |
+| 本地模型很慢 | CPU 推理就是这个速度；演示时先挑一个单元的区间 |
 | `git: 'credential-manager' is not a git command` | 这台机器没装 git 凭据管理器，命令行推不了仓库，改用 IDE 推送 |
 
 ## 目录结构
@@ -247,6 +271,7 @@ diff-review-agent
 - **回答的形状是 schema，不是请求** — 四种回复全部走强制工具调用，字段由代码里的 JSON Schema 定死；DeepSeek 不支持 `json_schema`，`json_object` 又只管"是合法 JSON"，强制工具调用把两件事都约束住。
 - **失败按块计，不按任务计** — 每个单元独立成败：正常出结论、因预算跳过、模型反复不合规被放弃，分别计数；一个单元翻车不连累整单，汇总如实报告"二十个查了十八个"。
 - **模型层是薄接口** — 换模型等于加一个适配类；测试永远跑离线替身。
+- **端点不支持强制工具调用时，schema 换成文字** — 同一个问题先按强制工具调用问，第一次被拒就整场改用文字描述 schema，并由原有的语法修复与机械校验兜住；本地模型就是这种端点。
 
 ## 已知限制
 
@@ -257,6 +282,7 @@ diff-review-agent
 - **评估语料是合成变异体** — 有标准答案，也因此偏向"能被形状发现"的缺陷；真实提交没有标准答案，要人工标注，两个标注者的 kappa 还没做。
 - **单次运行只是样本** — 同一份代码重跑，端到端召回差九个点；文档里给了宽度也给了这句话。
 - **不跑测试** — 只读边界、要编译目标仓库、偶发失败会污染证据，三条加起来的代价大于收益；真要做，`run_test` 是下一个工具。
+- **本地小模型判断不准** — 3B 级的本地模型能把循环走完、会调工具、会给放弃理由，但它常常读完就说没问题；这时输出会退化成一条基于规则、没有证据的问题，而不是一条编造的结论。真模型上的数字不能拿它当对照。
 - **GitHub 回写只做了评论，没做状态检查与自动修** — 也刻意没接"自动改代码"，那是另一个产品。
 
 ## License

@@ -281,7 +281,8 @@ function card(value, caption) {
 
 function loadMode() {
   api("/api/mode").then((data) => {
-    $("modeHint").textContent = "模型：" + data.models + "。每次审查都会真的调用模型，会产生费用。";
+    const cost = data.note ? " " + data.note : "每次审查都会真的调用模型，会产生费用。";
+    $("modeHint").textContent = "模型：" + data.models + "。" + cost;
   }).catch(() => { $("modeHint").textContent = "模型信息读取失败。"; });
 }
 

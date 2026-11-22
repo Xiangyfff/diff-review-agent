@@ -41,15 +41,16 @@ public final class EvalRunner {
 
     public static void main(String[] args) throws Exception {
         List<String> options = java.util.Arrays.asList(args);
-        boolean real = options.contains("--real");
         Path workspace = Path.of(args.length > 0 && !args[0].startsWith("--")
                 ? args[0] : "target/eval-corpus");
         Path output = Path.of(args.length > 1 && !args[1].startsWith("--") ? args[1] : "eval");
-        ReviewPipeline pipeline = real
-                ? new ReviewPipeline(com.codereview.agent.model.ReviewModels.fromEnvironment(),
+        com.codereview.agent.model.ReviewModels models =
+                com.codereview.agent.model.ReviewModels.forArguments(options);
+        ReviewPipeline pipeline = models == null
+                ? ReviewPipeline.offline()
+                : new ReviewPipeline(models,
                         com.codereview.agent.investigate.InvestigateConfig.defaults(),
-                        com.codereview.agent.verify.VerifyConfig.defaults())
-                : ReviewPipeline.offline();
+                        com.codereview.agent.verify.VerifyConfig.defaults());
         EvalReport report = run(workspace, pipeline);
         Files.createDirectories(output);
         Files.writeString(output.resolve("latest-report.md"), report.renderMarkdown(),

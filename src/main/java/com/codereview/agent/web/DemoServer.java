@@ -56,18 +56,15 @@ public final class DemoServer {
 
     public static void main(String[] args) throws IOException {
         int port = DEFAULT_PORT;
-        boolean real = false;
         for (String argument : args) {
-            if ("--real".equals(argument)) {
-                real = true;
-            } else {
+            if (!argument.startsWith("--")) {
                 port = Integer.parseInt(argument);
             }
         }
-        ReviewPipeline pipeline = real
-                ? new ReviewPipeline(ReviewModels.fromEnvironment(), InvestigateConfig.defaults(),
-                        VerifyConfig.defaults())
-                : ReviewPipeline.offline();
+        ReviewModels models = ReviewModels.forArguments(java.util.Arrays.asList(args));
+        ReviewPipeline pipeline = models == null
+                ? ReviewPipeline.offline()
+                : new ReviewPipeline(models, InvestigateConfig.defaults(), VerifyConfig.defaults());
         DemoServer server = new DemoServer(pipeline);
         HttpServer http = server.start(port);
         System.out.println("demo page: http://127.0.0.1:" + http.getAddress().getPort() + "/");
@@ -108,7 +105,13 @@ public final class DemoServer {
 
     private void handleMode(HttpExchange exchange) throws IOException {
         ObjectNode answer = MAPPER.createObjectNode();
-        answer.put("models", pipeline.modelDescription());
+        String models = pipeline.modelDescription();
+        answer.put("models", models);
+        // A model on this machine answers in tens of seconds, not in one: say so before the first
+        // click rather than letting the page look frozen.
+        if (models.contains("127.0.0.1") || models.contains("localhost")) {
+            answer.put("note", "本地模型：每次调用通常要几秒到几十秒，整次审查可能要几分钟。");
+        }
         send(exchange, 200, "application/json; charset=utf-8", answer.toString());
     }
 

@@ -50,7 +50,9 @@ public interface Chat {
         // already forced to answer through a tool call rejects the two settings together.
         ChatModel structured = model(settings, null);
         ObjectMapper mapper = new ObjectMapper();
-        return new Chat() {
+        // Wrapped so an endpoint that will not call tools degrades to "same schema, stated in
+        // words" instead of failing every call. A local model is exactly that endpoint.
+        return new StructuredChat(new Chat() {
             @Override
             public String complete(String system, String user) {
                 ChatResponse response = plain.chat(messages(system, user));
@@ -85,7 +87,7 @@ public interface Chat {
                 }
                 return arguments;
             }
-        };
+        });
     }
 
     private static ChatModel model(ModelSettings settings, String responseFormat) {
@@ -95,7 +97,7 @@ public interface Chat {
                 .modelName(settings.modelName())
                 .temperature(settings.temperature())
                 .maxTokens(settings.maxTokens())
-                .timeout(Duration.ofSeconds(120))
+                .timeout(Duration.ofSeconds(timeoutSeconds()))
                 .maxRetries(2)
                 .logRequests(false)
                 .logResponses(false);
@@ -103,6 +105,23 @@ public interface Chat {
             builder.responseFormat(responseFormat);
         }
         return builder.build();
+    }
+
+    /**
+     * A local model may take a minute on one hard prompt, while a hosted one should fail fast and be
+     * retried; hence a setting rather than a constant.
+     */
+    private static long timeoutSeconds() {
+        String raw = System.getenv("CODEREVIEW_LLM_TIMEOUT_SECONDS");
+        if (raw == null || raw.isBlank()) {
+            return 120;
+        }
+        try {
+            long seconds = Long.parseLong(raw.trim());
+            return seconds > 0 ? seconds : 120;
+        } catch (NumberFormatException e) {
+            return 120;
+        }
     }
 
     private static List<ChatMessage> messages(String system, String user) {

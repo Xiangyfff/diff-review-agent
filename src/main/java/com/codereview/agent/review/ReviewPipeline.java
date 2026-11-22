@@ -264,16 +264,16 @@ public final class ReviewPipeline {
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
             System.err.println("usage: ReviewPipeline <repository> <base> <head> [output-directory]"
-                    + " [--real]");
+                    + " [--real | --ollama]");
             System.exit(2);
         }
         Path repository = Path.of(args[0]);
-        boolean real = java.util.Arrays.asList(args).contains("--real");
         Path output = Path.of(args.length > 3 && !args[3].startsWith("--") ? args[3] : "review");
-        ReviewPipeline pipeline = real
-                ? new ReviewPipeline(com.codereview.agent.model.ReviewModels.fromEnvironment(),
-                        InvestigateConfig.defaults(), VerifyConfig.defaults())
-                : ReviewPipeline.offline();
+        com.codereview.agent.model.ReviewModels models =
+                com.codereview.agent.model.ReviewModels.forArguments(java.util.Arrays.asList(args));
+        ReviewPipeline pipeline = models == null
+                ? ReviewPipeline.offline()
+                : new ReviewPipeline(models, InvestigateConfig.defaults(), VerifyConfig.defaults());
         ReviewReport report = pipeline.run(repository, args[1], args[2]);
         Files.createDirectories(output);
         Files.writeString(output.resolve("review.md"), report.renderMarkdown(),
