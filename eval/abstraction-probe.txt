@@ -1,0 +1,37 @@
+model: deepseek-chat at https://api.deepseek.com/v1
+case-insensitive-password expected [pol-security-2] rank=2
+  abstraction: 校验密码时由区分大小写改为不区分大小写。
+    0.562 pol-security-1 认证失败的日志
+    0.534 pol-security-2 口令比较
+    0.497 pol-logging-2 日志字段
+    0.466 pol-logging-1 生产代码不得直接写标准输出
+    0.450 pol-security-3 会话有效期
+password-logged expected [pol-security-1, pol-logging-1] rank=1
+  abstraction: 登录时会把用户名和密码明文打印到标准输出。
+    0.595 pol-security-1 认证失败的日志
+    0.592 pol-logging-1 生产代码不得直接写标准输出
+    0.524 pol-logging-2 日志字段
+    0.498 pol-security-3 会话有效期
+    0.474 pol-security-2 口令比较
+password-content-equals expected [pol-security-2] rank=4
+  abstraction: 认证校验从无条件通过改为要求用户名与密码内容一致才通过。
+    0.665 pol-security-1 认证失败的日志
+    0.540 pol-logging-2 日志字段
+    0.512 pol-security-3 会话有效期
+    0.497 pol-security-2 口令比较
+    0.458 pol-logging-1 生产代码不得直接写标准输出
+policy-plain-equals expected [pol-security-2] rank=1
+  abstraction: 将凭据校验从按字符序列比较改为按对象相等性比较。
+    0.600 pol-security-2 口令比较
+    0.516 pol-logging-2 日志字段
+    0.453 pol-security-1 认证失败的日志
+    0.419 pol-logging-1 生产代码不得直接写标准输出
+    0.386 pol-security-3 会话有效期
+policy-stdout-in-audit expected [pol-logging-1] rank=1
+  abstraction: 审核订单时，日志输出方式从结构化日志改为直接打印到标准输出。
+    0.682 pol-logging-1 生产代码不得直接写标准输出
+    0.588 pol-logging-2 日志字段
+    0.574 pol-security-1 认证失败的日志
+    0.480 pol-security-3 会话有效期
+    0.470 pol-security-2 口令比较
+top1=3/5 top3=4/5

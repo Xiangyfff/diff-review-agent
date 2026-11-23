@@ -41,6 +41,25 @@ public interface Chat {
     }
 
     /**
+     * The same endpoint, but for a free-text answer with no JSON anywhere.
+     *
+     * <p>Exists because a provider that is asked for {@code json_object} rejects a prompt without
+     * the word json in it — the constraint has to be absent, not merely unused.
+     */
+    static Chat openAiCompatiblePlain(ModelSettings settings) {
+        ChatModel model = model(settings, null);
+        return (system, user) -> {
+            ChatResponse response = model.chat(messages(system, user));
+            record(response);
+            String text = response.aiMessage().text();
+            if (text == null || text.isBlank()) {
+                throw new IllegalStateException("the model returned an empty message");
+            }
+            return text;
+        };
+    }
+
+    /**
      * An OpenAI-compatible endpoint. DeepSeek, Qwen and a local gateway all speak this protocol, so
      * the provider is a setting rather than a code path.
      */
