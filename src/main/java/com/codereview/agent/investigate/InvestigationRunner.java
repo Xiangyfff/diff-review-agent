@@ -23,12 +23,23 @@ public final class InvestigationRunner {
     private final InvestigationModel model;
     private final Toolbox toolbox;
     private final InvestigateConfig config;
+    private final java.util.Map<String, String> policyTexts;
     private final FindingVerifier verifier = new FindingVerifier();
 
     public InvestigationRunner(InvestigationModel model, Toolbox toolbox, InvestigateConfig config) {
+        this(model, toolbox, config, java.util.Map.of());
+    }
+
+    /**
+     * @param policyTexts clause id to clause text, for the check that a conclusion citing a policy
+     *                    clause actually quotes it. Empty when the repository has no policies.
+     */
+    public InvestigationRunner(InvestigationModel model, Toolbox toolbox, InvestigateConfig config,
+                               java.util.Map<String, String> policyTexts) {
         this.model = model;
         this.toolbox = toolbox;
         this.config = config;
+        this.policyTexts = policyTexts == null ? java.util.Map.of() : java.util.Map.copyOf(policyTexts);
     }
 
     public InvestigationResult investigate(InvestigationTask task) {
@@ -125,7 +136,8 @@ public final class InvestigationRunner {
                 Finding finding = new Finding(task.unitKey(), task.file(), conclude.line(),
                         conclude.statement(), conclude.evidenceIds(), conclude.demand());
                 FindingVerifier.Validation validation = verifier.verify(finding, store,
-                        task.line(), unitEndLine(task), task.before() + "\n" + task.after());
+                        task.line(), unitEndLine(task), task.before() + "\n" + task.after(),
+                        policyTexts);
                 if (validation.ok()) {
                     remove(open, conclude.questionId());
                     findings.add(finding);

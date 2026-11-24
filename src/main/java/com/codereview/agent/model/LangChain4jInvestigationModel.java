@@ -37,6 +37,8 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
             或者用 fix 指出需要一起改的地方；只有当它确实不可从外部调用时，空的调用列表才算「没人用」。
             硬性要求：结论必须引用「已取得证据」里的编号；结论所在行必须落在被引证据的行区间内；
             结论里用反引号括起来的符号必须原样出现在被引证据的原文里；结论不超过三百字。
+            如果要引用政策条款，evidence 里写条款编号（pol- 开头），并在结论里原样带上条款里的一句话：
+            校验会检查编号确实存在、且结论真的引用了原文，缺一条就会被拒。
             不许猜严重程度、不许引用没有出现过的编号。只输出一个 JSON 对象。
             """;
 
@@ -146,6 +148,10 @@ public final class LangChain4jInvestigationModel implements InvestigationModel {
                     EvidenceWindow.DEFAULT_FULL_LIMIT));
         }
         text.append('\n');
+        if (toolbox.find("search_policy").isPresent()) {
+            text.append("引用政策条款时，evidence 里直接写条款编号（pol- 开头），它不必出现在上面"
+                    + "这份 ev- 列表里；结论里必须原样抄一句该条款的正文，否则校验会拒绝。\n");
+        }
 
         text.append("可用工具：\n").append(toolbox.render()).append('\n');
         text.append("预算：已调用 ").append(state.toolCallsUsed()).append(" 次，还剩 ")

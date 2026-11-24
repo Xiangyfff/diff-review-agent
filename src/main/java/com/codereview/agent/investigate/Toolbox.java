@@ -6,7 +6,11 @@ import com.codereview.agent.investigate.tool.FindReferencesTool;
 import com.codereview.agent.investigate.tool.HistoryTool;
 import com.codereview.agent.investigate.tool.PublicSurfaceTool;
 import com.codereview.agent.investigate.tool.ReadLinesTool;
+import com.codereview.agent.investigate.tool.SearchPolicyTool;
 import com.codereview.agent.investigate.tool.SearchTool;
+import com.codereview.agent.investigate.tool.ReadPolicyTool;
+
+import com.codereview.agent.triage.policy.PolicyIndex;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,6 +35,22 @@ public final class Toolbox {
             byName.put(tool.name(), tool);
         }
         this.tools = Map.copyOf(byName);
+    }
+
+    public static Toolbox standard(RepoAccess repository, PolicyIndex policies) {
+        List<ReviewTool> tools = new java.util.ArrayList<>(List.of(
+                cached(new ReadLinesTool(repository)),
+                cached(new FindCallersTool(repository)),
+                cached(new FindDefinitionTool(repository)),
+                cached(new FindReferencesTool(repository)),
+                cached(new SearchTool(repository)),
+                cached(new PublicSurfaceTool(repository)),
+                cached(new HistoryTool(repository))));
+        if (policies != null && !policies.isEmpty()) {
+            tools.add(cached(new SearchPolicyTool(policies)));
+            tools.add(cached(new ReadPolicyTool(policies)));
+        }
+        return new Toolbox(tools);
     }
 
     public static Toolbox standard(RepoAccess repository) {

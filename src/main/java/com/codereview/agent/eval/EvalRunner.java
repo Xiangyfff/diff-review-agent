@@ -24,6 +24,16 @@ public final class EvalRunner {
     }
 
     public static EvalReport run(Path workspace, ReviewPipeline pipeline) throws Exception {
+        return run(workspace, pipeline, java.util.Set.of());
+    }
+
+    /**
+     * @param only case ids to analyse; empty means the whole corpus. The skipped commits still
+     *             advance the base revision, because each mutation is built on the previous one and
+     *             running a case against the wrong parent would measure a different diff.
+     */
+    public static EvalReport run(Path workspace, ReviewPipeline pipeline, java.util.Set<String> only)
+            throws Exception {
         CorpusRepository.Corpus corpus = CorpusRepository.build(workspace);
         Map<String, MutationCase> cases = new java.util.HashMap<>();
         EvalCorpus.cases().forEach(mutation -> cases.put(mutation.id(), mutation));
@@ -32,8 +42,10 @@ public final class EvalRunner {
         String base = corpus.base();
         for (CorpusRepository.Commit commit : corpus.commits()) {
             MutationCase mutation = cases.get(commit.caseId());
-            outcomes.addAll(analyse(pipeline, workspace, base, commit.commitId(), mutation,
-                    commit.anchorLine()));
+            if (only.isEmpty() || only.contains(commit.caseId())) {
+                outcomes.addAll(analyse(pipeline, workspace, base, commit.commitId(), mutation,
+                        commit.anchorLine()));
+            }
             base = commit.commitId();
         }
         return new EvalReport(outcomes, pipeline.modelDescription());
@@ -54,7 +66,14 @@ public final class EvalRunner {
         if (options.contains("--no-policy")) {
             pipeline.policyRetrieval(false);
         }
-        EvalReport report = run(workspace, pipeline);
+        java.util.Set<String> only = options.stream()
+                .filter(option -> option.startsWith("--only="))
+                .map(option -> option.substring("--only=".length()))
+                .flatMap(list -> java.util.Arrays.stream(list.split(",")))
+                .map(String::strip)
+                .filter(id -> !id.isEmpty())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        EvalReport report = run(workspace, pipeline, only);
         Files.createDirectories(output);
         Files.writeString(output.resolve("latest-report.md"), report.renderMarkdown(),
                 StandardCharsets.UTF_8);

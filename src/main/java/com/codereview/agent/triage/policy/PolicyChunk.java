@@ -30,6 +30,23 @@ public record PolicyChunk(String id, String file, String heading, String text, b
         return id + " " + file + " / " + heading;
     }
 
+    /**
+     * The clause as a reader of the document sees it: the prose plus the fenced examples under
+     * the same heading. An investigator that only gets the prose is told what is forbidden but
+     * not what the document itself proposes instead, and then any suggestion it makes from
+     * general knowledge looks invented to the verifier.
+     */
+    public String fullText() {
+        if (examples.isEmpty()) {
+            return text;
+        }
+        StringBuilder all = new StringBuilder(text);
+        for (String example : examples) {
+            all.append("\n\n```\n").append(example.strip()).append("\n```");
+        }
+        return all.toString();
+    }
+
     /** A bounded excerpt for prompts, so one long section cannot swallow the budget. */
     public String excerpt(int width) {
         String flat = text.replaceAll("\\s+", " ").strip();

@@ -201,6 +201,10 @@ public final class TriageService {
      * Policy documents live with the code they govern, under {@code docs/policies}. A repository
      * without them, or an embedding endpoint that is down, produces an empty index: the review
      * simply has no policy signal, which is a normal state and never a failed run.
+     *
+     * <p>Triage scores on samples: a clause that ships an example is ranked by the changed code
+     * against that example, and its prose is used only for the identifier overlap. Prose-only
+     * clauses keep the prose route, but they are the fallback, not the rule.
      */
     private static PolicyIndex loadPolicies(Path repositoryPath) {
         Path directory = repositoryPath.resolve("docs").resolve("policies");
@@ -208,7 +212,8 @@ public final class TriageService {
             return PolicyIndex.empty();
         }
         try {
-            return PolicyIndex.build(PolicyLibrary.load(directory), OllamaEmbedder.fromEnvironment());
+            return PolicyIndex.build(PolicyLibrary.load(directory), OllamaEmbedder.fromEnvironment(),
+                    PolicyIndex.Scoring.SAMPLES);
         } catch (RuntimeException unavailable) {
             return PolicyIndex.empty();
         }

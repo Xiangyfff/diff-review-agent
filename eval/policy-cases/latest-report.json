@@ -1,0 +1,49 @@
+{
+  "models" : "deepseek-chat at https://api.deepseek.com/v1",
+  "summary" : "cases=2 defective=2 scheduled=2 triageRecall=100% | clean=0 flagged=0 triageFPR=0% | findings=2 kept=2 downgraded=0 dropped=0 merged=0 invalidRetractions=0 | endToEndRecall=100% | evidenceBacked=100%",
+  "metrics" : {
+    "cases" : 2,
+    "defective" : 2,
+    "defectiveScheduled" : 2,
+    "triageRecall" : 1.0,
+    "clean" : 0,
+    "cleanScheduled" : 0,
+    "triageFalsePositiveRate" : 0.0,
+    "endToEndRecall" : 1.0,
+    "evidenceBackedRecall" : 1.0,
+    "findings" : 2,
+    "kept" : 2,
+    "downgraded" : 0,
+    "dropped" : 0,
+    "invalidRetractions" : 0
+  },
+  "cases" : [ {
+    "id" : "policy-plain-equals",
+    "defective" : true,
+    "kind" : "policy-security",
+    "tier" : "MUST_INVESTIGATE",
+    "unitsScheduled" : 1,
+    "findings" : 1,
+    "kept" : 1,
+    "downgraded" : 0,
+    "dropped" : 0,
+    "invalidRetractions" : 0,
+    "lineMatched" : true,
+    "evidenceBacked" : true,
+    "anchorLine" : 12
+  }, {
+    "id" : "policy-stdout-in-audit",
+    "defective" : true,
+    "kind" : "policy-logging",
+    "tier" : "MUST_INVESTIGATE",
+    "unitsScheduled" : 1,
+    "findings" : 1,
+    "kept" : 1,
+    "downgraded" : 0,
+    "dropped" : 0,
+    "invalidRetractions" : 0,
+    "lineMatched" : true,
+    "evidenceBacked" : true,
+    "anchorLine" : 45
+  } ]
+}

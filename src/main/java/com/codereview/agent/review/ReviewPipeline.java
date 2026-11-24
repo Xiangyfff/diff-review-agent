@@ -17,6 +17,10 @@ import com.codereview.agent.triage.index.SymbolIndex;
 import com.codereview.agent.triage.parse.SourceParser;
 import com.codereview.agent.triage.model.FindingQuestion;
 import com.codereview.agent.triage.plan.PlannedUnit;
+import com.codereview.agent.triage.policy.PolicyLibrary;
+import com.codereview.agent.triage.policy.PolicyIndex;
+import com.codereview.agent.triage.policy.PolicyChunk;
+import com.codereview.agent.triage.policy.OllamaEmbedder;
 import com.codereview.agent.triage.tier.Tier;
 import com.codereview.agent.triage.plan.TriagePlan;
 import com.codereview.agent.verify.MockVerifier;
@@ -176,11 +180,18 @@ public final class ReviewPipeline {
         // copy for prompts, and tying the two stages together through a shared mutable index would
         // make either stage harder to run alone. Building it costs a filesystem walk.
         SymbolIndex index = new IndexBuilder(new SourceParser()).build(repository).index();
-        Toolbox toolbox = Toolbox.standard(new RepoAccess(repository, index));
+        PolicyIndex policies = policyIndex(repository);
+        Toolbox toolbox = Toolbox.standard(new RepoAccess(repository, index), policies);
+        java.util.Map<String, String> clauseTexts = new java.util.LinkedHashMap<>();
+        for (PolicyChunk chunk : policies.chunks()) {
+            // What read_policy returns is what the verifier trusts: the prose and the examples,
+            // so a fix copied from the clause's own 正例 is not treated as an invented name.
+            clauseTexts.put(chunk.id(), chunk.fullText());
+        }
         InvestigationModel investigatorModel = models == null ? investigationModel
                 : models.investigation(toolbox);
         InvestigationRunner investigator = new InvestigationRunner(investigatorModel, toolbox,
-                investigateConfig);
+                investigateConfig, clauseTexts);
         VerifierRunner verifierRunner = depth == Depth.FULL
                 ? new VerifierRunner(verifier, toolbox, verifyConfig) : null;
 
@@ -276,6 +287,23 @@ public final class ReviewPipeline {
             }
         }
         return ids;
+    }
+
+    /**
+     * The policy index the investigator's two policy tools search. Absent documents or an
+     * unreachable embedding endpoint both mean "no policy tools this run", never a failed review.
+     */
+    private static PolicyIndex policyIndex(Path repository) {
+        PolicyLibrary library = PolicyLibrary.load(repository.resolve("docs/policies"));
+        if (library.isEmpty()) {
+            return PolicyIndex.empty();
+        }
+        try {
+            return PolicyIndex.build(library, OllamaEmbedder.fromEnvironment(),
+                    PolicyIndex.Scoring.SAMPLES);
+        } catch (RuntimeException unreachable) {
+            return PolicyIndex.empty();
+        }
     }
 
     private ReviewReport report(TriagePlan plan, List<UnitOutcome> outcomes, List<Comment> comments,
