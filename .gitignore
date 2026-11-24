@@ -16,3 +16,5 @@ target/
 .DS_Store
 Thumbs.db
 eval-policy-*/
+eval-real*/
+eval/run/
