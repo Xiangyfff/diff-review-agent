@@ -24,12 +24,15 @@ import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
@@ -81,8 +84,11 @@ final class BodyDelta {
                     before.toString(), after.toString()));
             return;
         }
-        for (StatementSequenceDiff.Block block : StatementSequenceDiff.diff(oldStatements, newStatements, localNames)) {
-            classify(block, line, changes);
+        List<StatementSequenceDiff.Block> blocks = StatementSequenceDiff.diff(oldStatements, newStatements, localNames);
+        Set<Statement> explained = Collections.newSetFromMap(new IdentityHashMap<>());
+        detectMovedStatements(oldStatements, newStatements, localNames, line, changes, explained);
+        for (StatementSequenceDiff.Block block : blocks) {
+            classify(block, line, changes, explained);
         }
     }
 
@@ -130,10 +136,114 @@ final class BodyDelta {
         return !orderedLeft.equals(orderedRight);
     }
 
-    private static void classify(StatementSequenceDiff.Block block, int line, List<StructuralChange> changes) {
+    /**
+     * A statement that survives but now runs among different neighbours has moved. The sequence
+     * diff alone cannot say that: LCS has to keep one occurrence and call the rest a gap, so a
+     * swap plus an unrelated added line reads as "one statement added" with no order change.
+     * Comparing the ranks of the statements present on both sides finds the move anyway.
+     *
+     * <p>Only statements whose normalized text is unique in both revisions take part. With two
+     * identical {@code i++} lines there is no fact about which one moved, and naming one would
+     * invent a change a reviewer cannot point at.
+     */
+    private static void detectMovedStatements(List<Statement> before, List<Statement> after, Set<String> localNames,
+                                              int line, List<StructuralChange> changes, Set<Statement> explained) {
+        Map<String, Integer> oldCounts = fingerprintCounts(before, localNames);
+        Map<String, Integer> newCounts = fingerprintCounts(after, localNames);
+        Map<String, Integer> newIndex = new HashMap<>();
+        Map<String, Statement> newByFingerprint = new HashMap<>();
+        for (int index = 0; index < after.size(); index++) {
+            Statement statement = after.get(index);
+            String fingerprint = StatementNormalizer.normalize(statement, localNames);
+            newIndex.put(fingerprint, index);
+            newByFingerprint.putIfAbsent(fingerprint, statement);
+        }
+
+        List<Statement> common = new ArrayList<>();
+        List<String> fingerprints = new ArrayList<>();
+        List<Integer> ranks = new ArrayList<>();
+        for (Statement statement : before) {
+            String fingerprint = StatementNormalizer.normalize(statement, localNames);
+            if (oldCounts.get(fingerprint) == 1 && newCounts.getOrDefault(fingerprint, 0) == 1) {
+                common.add(statement);
+                fingerprints.add(fingerprint);
+                ranks.add(newIndex.get(fingerprint));
+            }
+        }
+        if (common.size() < 2) {
+            return;
+        }
+        boolean[] inOrder = longestIncreasing(ranks);
+        List<Statement> moved = new ArrayList<>();
+        for (int index = 0; index < common.size(); index++) {
+            if (!inOrder[index]) {
+                moved.add(common.get(index));
+            }
+        }
+        if (moved.isEmpty()) {
+            return;
+        }
+
+        changes.add(StructuralChange.exact(StructuralChange.Kind.STATEMENTS_REORDERED, line,
+                describeMove(moved), "", ""));
+        // These statements exist on both sides, so an LCS gap that lists them as added or removed
+        // is an alignment artifact, not a change. Mark both copies so the gap pass cannot report
+        // a move twice.
+        for (int index = 0; index < common.size(); index++) {
+            explained.add(common.get(index));
+            Statement twin = newByFingerprint.get(fingerprints.get(index));
+            if (twin != null) {
+                explained.add(twin);
+            }
+        }
+    }
+
+    private static Map<String, Integer> fingerprintCounts(List<Statement> statements, Set<String> localNames) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (Statement statement : statements) {
+            counts.merge(StatementNormalizer.normalize(statement, localNames), 1, Integer::sum);
+        }
+        return counts;
+    }
+
+    /** Marks the ranks that already increase, i.e. the statements whose relative order is intact. */
+    private static boolean[] longestIncreasing(List<Integer> ranks) {
+        int size = ranks.size();
+        int[] length = new int[size];
+        int[] previous = new int[size];
+        Arrays.fill(previous, -1);
+        int longest = 0;
+        for (int index = 0; index < size; index++) {
+            length[index] = 1;
+            for (int earlier = 0; earlier < index; earlier++) {
+                if (ranks.get(earlier) < ranks.get(index) && length[earlier] + 1 > length[index]) {
+                    length[index] = length[earlier] + 1;
+                    previous[index] = earlier;
+                }
+            }
+            if (length[index] > length[longest]) {
+                longest = index;
+            }
+        }
+        boolean[] kept = new boolean[size];
+        for (int index = longest; index >= 0; index = previous[index]) {
+            kept[index] = true;
+        }
+        return kept;
+    }
+
+    private static String describeMove(List<Statement> moved) {
+        String first = collapse(moved.get(0));
+        if (moved.size() == 1) {
+            return "`" + first + "` now runs in a different place";
+        }
+        return moved.size() + " statements changed their order, starting with `" + first + "`";
+    }
+
+    private static void classify(StatementSequenceDiff.Block block, int line, List<StructuralChange> changes,
+                                 Set<Statement> explained) {
         List<Statement> removed = block.removed();
         List<Statement> added = block.added();
-        Set<Statement> explained = Collections.newSetFromMap(new IdentityHashMap<>());
 
         detectRemovedNullGuard(removed, added, line, changes, explained);
         detectInvertedCondition(removed, added, line, changes, explained);

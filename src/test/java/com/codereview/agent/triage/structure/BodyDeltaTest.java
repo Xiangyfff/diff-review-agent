@@ -46,6 +46,44 @@ class BodyDeltaTest {
     }
 
     @Test
+    void aMoveIsFoundEvenWhenTheDiffAlsoAddsAnotherLine() {
+        List<StructuralChange> changes = compare(
+                "void m(Order o) { validate(o); save(o); }",
+                "void m(Order o) { save(o); validate(o); audit(o); }");
+
+        assertThat(kinds(changes)).contains(StructuralChange.Kind.STATEMENTS_REORDERED);
+        assertThat(changes)
+                .filteredOn(change -> change.kind() == StructuralChange.Kind.STATEMENTS_REORDERED)
+                .singleElement()
+                .satisfies(change -> {
+                    assertThat(change.confidence()).isEqualTo(StructuralChange.Confidence.EXACT);
+                    assertThat(change.detail()).contains("different place");
+                });
+    }
+
+    @Test
+    void theMovedStatementIsNotAlsoReportedAsAdded() {
+        List<StructuralChange> changes = compare(
+                "void m(Order o) { validate(o); save(o); }",
+                "void m(Order o) { save(o); validate(o); audit(o); }");
+
+        assertThat(kinds(changes)).doesNotContain(StructuralChange.Kind.STATEMENTS_DELETED);
+        assertThat(changes)
+                .filteredOn(change -> change.kind() == StructuralChange.Kind.STATEMENTS_ADDED)
+                .singleElement()
+                .satisfies(change -> assertThat(change.beforeSnippet()).contains("audit(o)"));
+    }
+
+    @Test
+    void repeatedStatementsAreNotGuessedIntoAMove() {
+        List<StructuralChange> changes = compare(
+                "void m() { log(); log(); check(); }",
+                "void m() { check(); log(); log(); extra(); }");
+
+        assertThat(kinds(changes)).doesNotContain(StructuralChange.Kind.STATEMENTS_REORDERED);
+    }
+
+    @Test
     void aChangedComparisonOperatorIsItsOwnShape() {
         List<StructuralChange> changes = compare(
                 "void m(int quantity) { boolean bulk = quantity > 10; use(bulk); }",
