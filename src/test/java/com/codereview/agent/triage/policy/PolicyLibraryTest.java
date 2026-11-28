@@ -114,6 +114,68 @@ class PolicyLibraryTest {
     }
 
     @Test
+    void aReferenceMarkerKeepsAClauseOutOfTheGates() {
+        List<PolicyChunk> chunks = PolicyLibrary.split("docs/policies/api.md", """
+                ## [参考] 日志格式
+
+                日志格式建议统一成结构化输出，具体字段由团队约定。
+
+                ```java
+                log.info("order {} reconciled", orderId);
+                ```
+                """);
+
+        PolicyChunk chunk = chunk(chunks, "日志格式");
+        assertThat(chunk.advisory()).isTrue();
+        assertThat(chunk.mandatory()).isFalse();
+        assertThat(chunk.enforceable()).isFalse();
+        assertThat(chunk.tier()).isEqualTo("referenced");
+        assertThat(chunk.examples()).hasSize(1);
+    }
+
+    @Test
+    void anAllowanceClauseCarriesTheRulesAndTheScopeItExempts() {
+        List<PolicyChunk> chunks = PolicyLibrary.split("docs/policies/api.md", """
+                ## [允许] 公开回调允许空参数
+
+                公开 API 的回调参数允许传 null，调用方自行处理。
+
+                豁免规则：NULL-CHECK-REMOVED, NULL-ARGUMENT
+                适用范围：src/main/java/com/example/api/**, src/main/java/com/example/web/**
+
+                ```java
+                handler.accept(null);
+                ```
+                """);
+
+        PolicyChunk chunk = chunk(chunks, "公开回调允许空参数");
+        assertThat(chunk.allowance()).isTrue();
+        assertThat(chunk.mandatory()).isFalse();
+        assertThat(chunk.enforceable()).isFalse();
+        assertThat(chunk.exemptedRules()).containsExactly("NULL-CHECK-REMOVED", "NULL-ARGUMENT");
+        assertThat(chunk.scope()).containsExactly("src/main/java/com/example/api/**",
+                "src/main/java/com/example/web/**");
+        assertThat(chunk.canExempt()).isTrue();
+    }
+
+    @Test
+    void anAllowanceWithoutAScopeCannotExemptAnything() {
+        List<PolicyChunk> chunks = PolicyLibrary.split("docs/policies/api.md", """
+                ## [允许] 空参数
+
+                这个参数可以为空。
+
+                豁免规则：NULL-CHECK-REMOVED
+
+                ```java
+                handler.accept(null);
+                ```
+                """);
+
+        assertThat(chunk(chunks, "空参数").canExempt()).isFalse();
+    }
+
+    @Test
     void anExcerptIsCutToWidthWithAnEllipsis() {
         PolicyChunk chunk = new PolicyChunk("pol-x-1", "x.md", "h", "一".repeat(500), false);
 

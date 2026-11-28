@@ -2,8 +2,10 @@ package com.codereview.agent.triage.tier;
 
 import com.codereview.agent.triage.diff.FileChange;
 import com.codereview.agent.triage.policy.PolicyChunk;
+import com.codereview.agent.triage.policy.PolicyExemption;
 import com.codereview.agent.triage.policy.PolicyHit;
 import com.codereview.agent.triage.rules.RiskCategory;
+import com.codereview.agent.triage.rules.Rule;
 import com.codereview.agent.triage.rules.RuleCatalog;
 import com.codereview.agent.triage.rules.RuleContext;
 import com.codereview.agent.triage.rules.RuleHit;
@@ -170,6 +172,39 @@ class TierPolicyTest {
         TierPolicy.Decision decision = policy.decide(context, rules.evaluate(context));
 
         assertThat(decision.tier()).isNotEqualTo(Tier.MUST_INVESTIGATE);
+    }
+
+    @Test
+    void anAllowanceClauseSkipsAUnitWhenNoGatingRuleRemains() {
+        AnalysisUnit unit = unit(1, 0, "void save() {\n}\n", "void save() {\n    log.info(\"x\");\n}\n");
+        List<StructuralChange> changes = List.of(StructuralChange.heuristic(
+                StructuralChange.Kind.STATEMENTS_ADDED, 12, "1 statement(s) added", "", "log.info(\"x\");"));
+        RuleContext context = new RuleContext(unit, changes);
+        PolicyExemption exemption = new PolicyExemption("pol-api-1", 0.83,
+                List.of("NULL-CHECK-REMOVED"));
+
+        TierPolicy.Decision decision = policy.decide(context, rules.evaluate(context), exemption);
+
+        assertThat(decision.tier()).isEqualTo(Tier.SKIP);
+        assertThat(decision.reason()).startsWith(TierPolicy.EXEMPTION_REASON);
+        assertThat(decision.reason()).contains("pol-api-1");
+    }
+
+    @Test
+    void anAllowanceClauseCannotExcuseARuleItDoesNotName() {
+        AnalysisUnit unit = unit(1, 0, "void save() {\n}\n", "void save() {\n    log.info(\"x\");\n}\n");
+        List<StructuralChange> changes = List.of(StructuralChange.heuristic(
+                StructuralChange.Kind.STATEMENTS_ADDED, 12, "1 statement(s) added", "", "log.info(\"x\");"));
+        RuleContext context = new RuleContext(unit, changes);
+        Rule gating = new Rule("OPERATOR-CHANGED", RiskCategory.SECURITY, true,
+                "operators changed", ruleContext -> true);
+        PolicyExemption exemption = new PolicyExemption("pol-api-1", 0.83,
+                List.of("NULL-CHECK-REMOVED"));
+
+        TierPolicy.Decision decision = policy.decide(context, List.of(new RuleHit(gating, List.of())),
+                exemption);
+
+        assertThat(decision.tier()).isEqualTo(Tier.MUST_INVESTIGATE);
     }
 
     private static AnalysisUnit unit(int added, int removed, String before, String after) {

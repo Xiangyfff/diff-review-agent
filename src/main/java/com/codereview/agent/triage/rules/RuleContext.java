@@ -27,8 +27,9 @@ public record RuleContext(AnalysisUnit unit, List<StructuralChange> changes,
         policies = policies == null ? List.of() : List.copyOf(policies);
     }
 
+    /** Only an enforceable clause counts here: a reference clause is background, not a gate. */
     public boolean policyMandatory() {
-        return policies.stream().anyMatch(hit -> hit.chunk().mandatory());
+        return policies.stream().anyMatch(hit -> hit.chunk().enforceable());
     }
 
     public boolean warned() {

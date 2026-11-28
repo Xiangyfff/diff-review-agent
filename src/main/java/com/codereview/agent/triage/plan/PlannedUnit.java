@@ -5,6 +5,7 @@ import com.codereview.agent.triage.rules.RiskCategory;
 import com.codereview.agent.triage.rules.RuleHit;
 import com.codereview.agent.triage.structure.StructuralChange;
 import com.codereview.agent.triage.tier.Tier;
+import com.codereview.agent.triage.tier.TierPolicy;
 import com.codereview.agent.triage.unit.AnalysisUnit;
 
 import java.util.List;
@@ -44,8 +45,16 @@ public record PlannedUnit(
         if (budgetSkipped) {
             return false;
         }
-        return tier == Tier.MUST_INVESTIGATE
-                || (tier == Tier.JUDGE && !questions.isEmpty());
+        return tier == Tier.MUST_INVESTIGATE || tier == Tier.JUDGE;
+    }
+
+    /**
+     * A unit a policy clause explicitly allowed. It is not scheduled and produces no comment,
+     * but it is kept in the plan with its clause id so the exemption is visible and countable.
+     */
+    public boolean exempted() {
+        return tier == Tier.SKIP && tierReason != null
+                && tierReason.startsWith(TierPolicy.EXEMPTION_REASON);
     }
 
     public String describe() {

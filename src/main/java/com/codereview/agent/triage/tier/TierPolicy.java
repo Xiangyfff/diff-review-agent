@@ -1,5 +1,6 @@
 package com.codereview.agent.triage.tier;
 
+import com.codereview.agent.triage.policy.PolicyExemption;
 import com.codereview.agent.triage.rules.RiskCategory;
 import com.codereview.agent.triage.rules.RuleContext;
 import com.codereview.agent.triage.rules.RuleHit;
@@ -26,6 +27,13 @@ public final class TierPolicy {
      */
     public static final String CHEAP_GATE_REASON = "cheap gate: ";
 
+    /**
+     * Prefix of the reason recorded when a policy clause explicitly allows what the rules would
+     * otherwise have promoted. It is a prefix for the same reason as the cheap gate: the plan
+     * stays flat, and the count survives serialisation without a second field.
+     */
+    public static final String EXEMPTION_REASON = "policy exemption: ";
+
     /** Above this many changed lines, "small" stops being a defensible description. */
     private static final int SMALL_CHANGE_LINES = 4;
 
@@ -37,6 +45,24 @@ public final class TierPolicy {
     }
 
     public Decision decide(RuleContext context, List<RuleHit> hits) {
+        return decide(context, hits, null);
+    }
+
+    /**
+     * @param exemption an allowance clause that removed hits for {@code context.unit().file()},
+     *                  or {@code null}. It only skips a unit when no gating rule remains: a
+     *                  clause may excuse the rule it names, never the other rules that fired.
+     */
+    public Decision decide(RuleContext context, List<RuleHit> hits, PolicyExemption exemption) {
+        Decision decision = decideByRules(context, hits);
+        if (exemption != null && hits.stream().noneMatch(RuleHit::gates)) {
+            return new Decision(Tier.SKIP, decision.category(),
+                    EXEMPTION_REASON + exemption.describe());
+        }
+        return decision;
+    }
+
+    private Decision decideByRules(RuleContext context, List<RuleHit> hits) {
         RiskCategory category = hits.stream()
                 .map(hit -> hit.rule().category())
                 .min(Comparator.naturalOrder())

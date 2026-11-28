@@ -14,14 +14,29 @@ import java.util.stream.Stream;
  * <p>Cutting on headings rather than on a fixed window is deliberate: a heading is the unit a
  * human wrote deliberately, so an excerpt always reads as a complete rule instead of half of two.
  *
- * <p>A heading may carry a mandatory marker ({@code [强制]} or {@code [mandatory]}). That marker
- * is the document's own statement that any change touching the section has to be checked; it is
- * what lets a policy hit gate the tier without asking a model.
+ * <p>A heading may carry three markers:
+ *
+ * <ul>
+ *   <li>{@code [强制]} / {@code [mandatory]} — the document's own statement that any change
+ *       touching the section has to be checked. Only these clauses may raise a tier.</li>
+ *   <li>{@code [参考]} / {@code [advisory]} — background. The clause can be quoted, but it may
+ *       not raise a tier and may not exempt anything.</li>
+ *   <li>{@code [允许]} / {@code [allows]} — an allowance. It names the rules it exempts and the
+ *       paths it covers, and carries an example; all three have to match before it is used.</li>
+ * </ul>
+ *
+ * <p>Directives inside the body use a line of their own:
+ * {@code 豁免规则：NULL-CHECK-REMOVED} and {@code 适用范围：src/main/java/**}. English spellings
+ * {@code exempts:} and {@code scope:} work too.
  */
 public final class PolicyLibrary {
 
     public static final int MAX_CHUNK_CHARS = 1500;
     private static final String[] MANDATORY_MARKERS = {"[强制]", "[mandatory]"};
+    private static final String[] ADVISORY_MARKERS = {"[参考]", "[advisory]"};
+    private static final String[] ALLOWANCE_MARKERS = {"[允许]", "[allows]"};
+    private static final String[] EXEMPT_KEYS = {"豁免规则", "exempts"};
+    private static final String[] SCOPE_KEYS = {"适用范围", "范围", "scope"};
 
     private final List<PolicyChunk> chunks;
     private final int files;
@@ -98,6 +113,8 @@ public final class PolicyLibrary {
         List<PolicyChunk> chunks = new ArrayList<>();
         String heading = null;
         boolean mandatory = false;
+        boolean advisory = false;
+        boolean allowance = false;
         StringBuilder body = new StringBuilder();
         List<String> examples = new ArrayList<>();
         StringBuilder sample = null;
@@ -121,13 +138,19 @@ public final class PolicyLibrary {
                 continue;
             }
             if (line.startsWith("#")) {
-                if (heading != null && add(chunks, file, base, counter + 1, heading, mandatory,
-                        body.toString(), examples)) {
+                if (heading != null && add(chunks, file, base, counter + 1, heading, mandatory, advisory,
+                        allowance, body.toString(), examples)) {
                     counter++;
                 }
                 String raw = line.replaceAll("^#+\\s*", "");
-                // The marker has to be read before it is stripped from the heading text.
-                mandatory = isMandatory(raw);
+                // The markers have to be read before they are stripped from the heading text.
+                mandatory = hasAny(raw, MANDATORY_MARKERS);
+                advisory = hasAny(raw, ADVISORY_MARKERS);
+                allowance = hasAny(raw, ALLOWANCE_MARKERS);
+                if (allowance) {
+                    // An allowance is never a requirement, even if both markers were written.
+                    mandatory = false;
+                }
                 heading = clean(raw);
                 body.setLength(0);
                 examples.clear();
@@ -136,15 +159,17 @@ public final class PolicyLibrary {
             body.append(line).append('\n');
         }
         if (heading != null) {
-            add(chunks, file, base, counter + 1, heading, mandatory, body.toString(), examples);
+            add(chunks, file, base, counter + 1, heading, mandatory, advisory, allowance,
+                    body.toString(), examples);
         } else if (!body.toString().isBlank()) {
-            add(chunks, file, base, 1, file, false, body.toString(), examples);
+            add(chunks, file, base, 1, file, false, false, false, body.toString(), examples);
         }
         return chunks;
     }
 
     private static boolean add(List<PolicyChunk> chunks, String file, String base, int counter,
-                               String heading, boolean mandatory, String body, List<String> examples) {
+                               String heading, boolean mandatory, boolean advisory, boolean allowance,
+                               String body, List<String> examples) {
         String text = body.strip();
         if (text.isEmpty() && examples.isEmpty()) {
             // A heading with neither prose nor a sample says nothing a reviewer could be held to.
@@ -156,12 +181,39 @@ public final class PolicyLibrary {
         if (text.length() > MAX_CHUNK_CHARS) {
             text = text.substring(0, MAX_CHUNK_CHARS);
         }
-        chunks.add(new PolicyChunk("pol-" + base + "-" + counter, file, heading, text, mandatory, examples));
+        List<String> exemptedRules = allowance ? directive(text, EXEMPT_KEYS) : List.of();
+        List<String> scope = allowance ? directive(text, SCOPE_KEYS) : List.of();
+        chunks.add(new PolicyChunk("pol-" + base + "-" + counter, file, heading, text, mandatory,
+                advisory, allowance, exemptedRules, scope, examples));
         return true;
     }
 
-    private static boolean isMandatory(String heading) {
-        for (String marker : MANDATORY_MARKERS) {
+    /** Values of a {@code key: a, b} line, in document order. */
+    private static List<String> directive(String text, String[] keys) {
+        List<String> values = new ArrayList<>();
+        for (String line : text.split("\\R")) {
+            String stripped = line.strip();
+            for (String key : keys) {
+                if (!stripped.startsWith(key)) {
+                    continue;
+                }
+                String rest = stripped.substring(key.length()).strip();
+                if (!(rest.startsWith(":") || rest.startsWith("："))) {
+                    continue;
+                }
+                rest = rest.substring(1).strip();
+                for (String value : rest.split("[,，、;；]+")) {
+                    if (!value.isBlank()) {
+                        values.add(value.strip());
+                    }
+                }
+            }
+        }
+        return values;
+    }
+
+    private static boolean hasAny(String heading, String[] markers) {
+        for (String marker : markers) {
             if (heading.contains(marker)) {
                 return true;
             }
@@ -171,8 +223,10 @@ public final class PolicyLibrary {
 
     private static String clean(String heading) {
         String cleaned = heading;
-        for (String marker : MANDATORY_MARKERS) {
-            cleaned = cleaned.replace(marker, "");
+        for (String[] markers : new String[][]{MANDATORY_MARKERS, ADVISORY_MARKERS, ALLOWANCE_MARKERS}) {
+            for (String marker : markers) {
+                cleaned = cleaned.replace(marker, "");
+            }
         }
         return cleaned.strip();
     }
