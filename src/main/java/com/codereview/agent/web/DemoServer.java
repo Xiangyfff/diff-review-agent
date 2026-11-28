@@ -326,6 +326,26 @@ public final class DemoServer {
             }
             double samplePercent = number(request, "sample", 0.0);
             String description = text(request, "description");
+            // A review always reads old -> new. Handed the two commits the other way round, every
+            // addition looks like a deletion and every deletion like an addition, so swap them and
+            // say so on the page instead of reporting a review of the reverse change.
+            boolean swapped = false;
+            try (Git git = Git.open(path.toFile())) {
+                Repository gitRepository = git.getRepository();
+                org.eclipse.jgit.lib.ObjectId baseId = gitRepository.resolve(base);
+                org.eclipse.jgit.lib.ObjectId headId = gitRepository.resolve(head);
+                if (baseId != null && headId != null && !baseId.equals(headId)) {
+                    try (org.eclipse.jgit.revwalk.RevWalk walk =
+                                 new org.eclipse.jgit.revwalk.RevWalk(gitRepository)) {
+                        if (walk.isMergedInto(walk.parseCommit(headId), walk.parseCommit(baseId))) {
+                            String older = head;
+                            head = base;
+                            base = older;
+                            swapped = true;
+                        }
+                    }
+                }
+            }
             pipeline.authorIntent(com.codereview.agent.triage.model.AuthorIntent
                     .fromText(description, "页面输入"));
             long started = System.nanoTime();
@@ -338,6 +358,9 @@ public final class DemoServer {
             body.put("models", pipeline.modelDescription());
             body.put("depth", depth.name());
             body.put("samplePercent", samplePercent);
+            if (swapped) {
+                body.put("swapped", true);
+            }
             if (!pipeline.authorIntent().isEmpty()) {
                 ObjectNode intent = body.putObject("authorIntent");
                 intent.put("title", pipeline.authorIntent().title());

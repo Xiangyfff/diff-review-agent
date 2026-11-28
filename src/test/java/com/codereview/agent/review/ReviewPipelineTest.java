@@ -157,7 +157,8 @@ class ReviewPipelineTest {
             assertThat(report.comments()).hasSize(1);
             Comment comment = report.comments().get(0);
             assertThat(comment.status()).isEqualTo(Comment.Status.QUESTION);
-            assertThat(comment.body()).contains("没有拿到能下结论的证据");
+            assertThat(comment.body()).contains("NULL-CHECK-REMOVED");
+            assertThat(comment.body()).contains("没有取到能下结论的证据");
         }
     }
 
@@ -198,6 +199,51 @@ class ReviewPipelineTest {
             assertThat(report.findings()).isEqualTo(
                     report.comments().size() + report.dropped() + report.merged());
             assertThat(report.renderMarkdown()).contains("Units investigated");
+        }
+    }
+
+    @Test
+    void deletedMethodsInOneFileBecomeOneQuestionThatNamesTheirLines() throws Exception {
+        try (Git git = Git.init().setDirectory(repository.toFile()).call()) {
+            write("src/main/java/shop/Legacy.java", """
+                    package shop;
+
+                    public class Legacy {
+
+                        public int first(int a) {
+                            return a + 1;
+                        }
+
+                        public int second(int b) {
+                            return b + 2;
+                        }
+                    }
+                    """);
+            commit(git, "base");
+            String base = git.getRepository().resolve("HEAD").name();
+
+            write("src/main/java/shop/Legacy.java", """
+                    package shop;
+
+                    public class Legacy {
+                    }
+                    """);
+            commit(git, "delete both helpers");
+            String head = git.getRepository().resolve("HEAD").name();
+
+            InvestigationModel lazy = state -> new ModelTurn.Abandon("q1", "没有时间了");
+            ReviewPipeline pipeline = new ReviewPipeline(com.codereview.agent.triage.TriageService.offline(),
+                    lazy, new com.codereview.agent.verify.MockVerifier(),
+                    com.codereview.agent.investigate.InvestigateConfig.defaults(),
+                    com.codereview.agent.verify.VerifyConfig.defaults());
+
+            ReviewReport report = pipeline.run(repository, base, head);
+
+            assertThat(report.comments()).hasSize(1);
+            Comment comment = report.comments().get(0);
+            assertThat(comment.body()).contains("这个方法被删除了");
+            assertThat(comment.body()).contains("共 2 处");
+            assertThat(report.merged()).isGreaterThanOrEqualTo(1);
         }
     }
 

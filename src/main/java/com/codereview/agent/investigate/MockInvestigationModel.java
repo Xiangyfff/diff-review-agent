@@ -19,6 +19,14 @@ public final class MockInvestigationModel implements InvestigationModel {
 
     @Override
     public ModelTurn next(InvestigationState state) {
+        if (state.opening()) {
+            // Two plain questions anchored to the method the runner already read. The point is to
+            // exercise the raise path offline, not to be a good reviewer.
+            String target = methodName(state.unitKey());
+            return new ModelTurn.Raise(List.of(
+                    new ModelTurn.Seed(target, "这处改动是否改变了原有行为？", 1),
+                    new ModelTurn.Seed(target, "改动引入的值在调用链上是否可能为空？", 2)));
+        }
         Question question = state.open().get(0);
         if (state.evidence().isEmpty()) {
             ToolCall call = new ToolCall("read_lines", Map.of(
@@ -34,6 +42,13 @@ public final class MockInvestigationModel implements InvestigationModel {
         }
         String statement = "改动附近的代码仍然直接使用了 `" + symbol + "`，需要确认它在调用链上的取值来源。";
         return new ModelTurn.Conclude(question.id(), statement, List.of(evidence.id()), evidence.startLine());
+    }
+
+    private static String methodName(String unitKey) {
+        int hash = unitKey.indexOf('#');
+        String name = hash < 0 ? unitKey : unitKey.substring(hash + 1);
+        int paren = name.indexOf('(');
+        return paren < 0 ? name : name.substring(0, paren);
     }
 
     private static String firstIdentifier(String text) {

@@ -21,6 +21,8 @@ import com.codereview.agent.triage.policy.PolicyLibrary;
 import com.codereview.agent.triage.policy.PolicyIndex;
 import com.codereview.agent.triage.policy.PolicyChunk;
 import com.codereview.agent.triage.policy.OllamaEmbedder;
+import com.codereview.agent.triage.rules.RuleCatalog;
+import com.codereview.agent.triage.structure.StructuralChange;
 import com.codereview.agent.triage.tier.Tier;
 import com.codereview.agent.triage.plan.TriagePlan;
 import com.codereview.agent.verify.MockVerifier;
@@ -183,30 +185,46 @@ public final class ReviewPipeline {
         PolicyIndex policies = policyIndex(repository);
         Toolbox toolbox = Toolbox.standard(new RepoAccess(repository, index), policies);
         java.util.Map<String, String> clauseTexts = new java.util.LinkedHashMap<>();
+        java.util.Map<String, PolicyChunk> clauseChunks = new java.util.LinkedHashMap<>();
         for (PolicyChunk chunk : policies.chunks()) {
             // What read_policy returns is what the verifier trusts: the prose and the examples,
             // so a fix copied from the clause's own 正例 is not treated as an invented name.
             clauseTexts.put(chunk.id(), chunk.fullText());
+            clauseChunks.put(chunk.id(), chunk);
         }
         InvestigationModel investigatorModel = models == null ? investigationModel
                 : models.investigation(toolbox);
         InvestigationRunner investigator = new InvestigationRunner(investigatorModel, toolbox,
-                investigateConfig, clauseTexts);
+                investigateConfig, clauseTexts, clauseChunks);
         VerifierRunner verifierRunner = depth == Depth.FULL
                 ? new VerifierRunner(verifier, toolbox, verifyConfig) : null;
 
         for (PlannedUnit unit : scheduled) {
-            outcomes.add(investigateAndComment(unit, unit.questions(), investigator, verifierRunner,
-                    false, seen, comments, tally));
+            // Only a mandatory unit carries seeded questions. Judge-tier units and samples open
+            // with an empty queue so the investigation raises questions from the code it reads.
+            List<FindingQuestion> seeds = unit.tier() == Tier.MUST_INVESTIGATE
+                    ? unit.questions() : List.of();
+            outcomes.add(investigateAndComment(unit, seeds, investigator, verifierRunner,
+                    false, seen, comments, tally, clauseTexts));
         }
 
         int sampledWithFindings = 0;
         for (PlannedUnit unit : sampled) {
-            UnitOutcome outcome = investigateAndComment(unit, sampleQuestions(unit), investigator,
-                    verifierRunner, true, seen, comments, tally);
+            UnitOutcome outcome = investigateAndComment(unit, List.of(), investigator,
+                    verifierRunner, true, seen, comments, tally, clauseTexts);
             outcomes.add(outcome);
             if (outcome.findings() > 0) {
                 sampledWithFindings++;
+            }
+        }
+
+        // A unit the policy documents explicitly allowed is reported, but not as a problem: it is
+        // not investigated and produces no comment, and its tier says so.
+        for (PlannedUnit unit : plan.units()) {
+            if (unit.exempted()) {
+                outcomes.add(new UnitOutcome(unit.unit().file(), unit.unit().key(), "EXEMPTED",
+                        unit.category().name(), "EXEMPTED", 0, 0, 0, List.of(), false,
+                        policyIdsOf(unit)));
             }
         }
 
@@ -221,10 +239,12 @@ public final class ReviewPipeline {
      */
     private UnitOutcome investigateAndComment(PlannedUnit unit, List<FindingQuestion> questions,
             InvestigationRunner investigator, VerifierRunner verifierRunner, boolean sampled,
-            java.util.Set<String> seen, List<Comment> comments, Tally tally) {
+            java.util.Set<String> seen, List<Comment> comments, Tally tally,
+            java.util.Map<String, String> clauseTexts) {
         InvestigationResult result = investigator.investigate(taskOf(unit, questions));
         tally.findings += result.findings().size();
         int verifyCalls = 0;
+        java.util.List<String> exemptionClauseIds = new ArrayList<>();
         for (Finding finding : result.findings()) {
             VerifyResult verdict;
             if (verifierRunner == null) {
@@ -259,18 +279,63 @@ public final class ReviewPipeline {
                     unit.category().name(), statusOf(verdict), finding.statement(),
                     finding.evidenceIds()));
         }
+        // A deep-dive exemption is a claim too — "the clause allows this" — so it goes through the
+        // same critic as a finding. Only an unrefuted claim stays an exemption; a refuted one turns
+        // back into a question for the author, quoting what the critic found.
+        boolean exemptionUpheld = true;
+        for (InvestigationResult.Exemption exemption : result.exemptions()) {
+            exemptionClauseIds.add(exemption.clauseId());
+            if (verifierRunner == null) {
+                continue;
+            }
+            Finding claim = new Finding(unit.unit().key(), unit.unit().file(), exemption.line(),
+                    "条款 " + exemption.clauseId() + " 允许这处改动：" + exemption.reason(),
+                    exemption.evidenceIds(), Finding.CONFIRM);
+            List<Evidence> cited = result.evidence().stream()
+                    .filter(evidence -> exemption.evidenceIds().contains(evidence.id()))
+                    .toList();
+            VerifyResult verdict = verifierRunner.review(new VerificationRequest(claim, cited,
+                    unit.unit().textBefore(), unit.unit().textAfter(), result.attempts(),
+                    exemption.clauseId(), clauseTexts.getOrDefault(exemption.clauseId(), ""),
+                    exemption.quote(), exemption.reason()));
+            verifyCalls += verdict.toolCalls();
+            tally.verified++;
+            if (verdict.invalid()) {
+                tally.invalidRetractions++;
+            }
+            if (verdict.disposition() != VerifyResult.Disposition.ASSERTION) {
+                exemptionUpheld = false;
+                comments.add(new Comment(unit.unit().file(), exemption.line(),
+                        unit.category().name(), Comment.Status.QUESTION,
+                        "调查员认为条款 " + exemption.clauseId() + " 允许这处改动，但复核没有确认："
+                                + verdict.verdict().reason()
+                                + "。请确认这处改动确实落在条款允许的范围和示例之内。",
+                        exemption.evidenceIds()));
+            }
+        }
         // A unit the rules insist on investigating must not end up silent just because the model
         // gave up. Turn that outcome into a question the author can answer, and say plainly that
         // the evidence never arrived.
-        if (result.findings().isEmpty() && unit.tier() == Tier.MUST_INVESTIGATE) {
+        if (result.findings().isEmpty() && result.exemptions().isEmpty()
+                && unit.tier() == Tier.MUST_INVESTIGATE) {
             comments.add(unverified(unit));
         }
         List<String> abandonReasons = result.abandoned().stream()
                 .map(abandoned -> abandoned.question() + " -> " + abandoned.reason())
                 .toList();
+        List<String> policies = new ArrayList<>(policyIdsOf(unit));
+        for (String clauseId : exemptionClauseIds) {
+            if (!policies.contains(clauseId)) {
+                policies.add(clauseId);
+            }
+        }
+        String outcome = result.outcome().name();
+        if (result.exempted() && !exemptionUpheld) {
+            outcome = InvestigationResult.Outcome.CONCLUDED.name();
+        }
         return new UnitOutcome(unit.unit().file(), unit.unit().key(), unit.tier().name(),
-                unit.category().name(), result.outcome().name(), result.toolCalls(),
-                result.findings().size(), verifyCalls, abandonReasons, sampled, policyIdsOf(unit));
+                unit.category().name(), outcome, result.toolCalls(),
+                result.findings().size(), verifyCalls, abandonReasons, sampled, policies);
     }
 
     /** The policy clauses the triage stage attached to this unit, for the report and the page. */
@@ -311,11 +376,6 @@ public final class ReviewPipeline {
         return new ReviewReport(plan.baseRevision(), plan.headRevision(), plan.stats(), outcomes,
                 comments, tally.findings, tally.dropped, tally.invalidRetractions, tally.merged,
                 plan.screenedOut(), tally.verified, tally.downgraded, summary);
-    }
-
-    private static List<FindingQuestion> sampleQuestions(PlannedUnit unit) {
-        return List.of(new FindingQuestion(unit.unit().name(),
-                "抽查：这次改动是否存在作者需要确认的问题？先读改动附近的代码，读不到证据就放弃。"));
     }
 
     private static final class Tally {
@@ -375,19 +435,28 @@ public final class ReviewPipeline {
     }
 
     private static Comment unverified(PlannedUnit unit) {
-        String rule = unit.ruleHits().isEmpty() ? unit.tierReason()
-                : "规则 " + unit.ruleHits().get(0).rule().id();
-        String body = "这里被判为必查（" + rule + "），但取证之后没有拿到能下结论的证据，"
-                + "所以留作问题：" + rationaleOf(unit);
+        String ruleId = unit.ruleHits().isEmpty() ? "" : unit.ruleHits().get(0).rule().id();
+        String meaning = RuleCatalog.explain(ruleId);
+        List<String> clauses = policyIdsOf(unit);
+        boolean removed = unit.changes().stream()
+                .anyMatch(change -> change.kind() == StructuralChange.Kind.UNIT_REMOVED);
+        String body;
+        if (removed) {
+            // "The contract changed" is technically true for a deletion, but it reads as if the
+            // method were still there with a new signature. Say what actually happened.
+            body = "这个方法被删除了：如果仓库里还有调用方，删除会让它们编译失败或行为改变；"
+                    + "深挖没有取到能下结论的证据，请确认删除是有意的。";
+        } else if ("POLICY-CONSTRAINT".equals(ruleId) && !clauses.isEmpty()) {
+            body = "强制条款 " + String.join("、", clauses)
+                    + " 要求这处改动逐条对照，但深挖没有取到能下结论的证据。";
+        } else if (meaning != null) {
+            body = "规则 `" + ruleId + "` 命中：" + meaning
+                    + "；深挖没有取到能下结论的证据，请确认这处改动是有意的。";
+        } else {
+            body = "这里被判为必查（" + unit.tierReason() + "），但深挖没有取到能下结论的证据。";
+        }
         return new Comment(unit.unit().file(), unit.unit().startLine(),
                 unit.category().name(), Comment.Status.QUESTION, body, List.of());
-    }
-
-    private static String rationaleOf(PlannedUnit unit) {
-        if (!unit.ruleHits().isEmpty()) {
-            return unit.ruleHits().get(0).rule().rationale();
-        }
-        return "请确认这次改动没有改变原有行为。";
     }
 
     private static Comment.Status statusOf(VerifyResult verdict) {

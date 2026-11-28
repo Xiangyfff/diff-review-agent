@@ -16,8 +16,12 @@ final class Schemas {
                  "required":["target","text"]}},
               "worthInvestigating":{"type":"boolean"},
               "abstainReason":{"type":"string"},
+              "witness":{"type":"object","properties":{
+                 "kind":{"type":"string","enum":["none","test-only","log-only"]},
+                 "quote":{"type":"string"}},
+                 "required":["kind","quote"]},
               "rationale":{"type":"string"}},
-             "required":["questions","worthInvestigating","abstainReason","rationale"]}
+             "required":["questions","worthInvestigating","abstainReason","witness","rationale"]}
             """;
 
     static final String TRIAGE_SUMMARY = """
@@ -29,16 +33,21 @@ final class Schemas {
 
     static final String INVESTIGATION_TURN = """
             {"type":"object","properties":{
-              "action":{"type":"string","enum":["tool","abandon","conclude"]},
+              "action":{"type":"string","enum":["raise","tool","reject","abandon","conclude","exempt"]},
               "question":{"type":"string"},
+              "questions":{"type":"array","items":{"type":"object","properties":{
+                "target":{"type":"string"},"text":{"type":"string"},"priority":{"type":"integer"}},
+                "required":["target","text"]}},
               "tool":{"type":"string"},
               "arguments":{"type":"object","additionalProperties":{"type":"string"}},
               "reason":{"type":"string"},
               "statement":{"type":"string"},
+              "clause":{"type":"string"},
+              "quote":{"type":"string"},
               "evidence":{"type":"array","items":{"type":"string"}},
               "line":{"type":"integer"},
               "demand":{"type":"string","enum":["fix","confirm"]}},
-             "required":["action","question"]}
+             "required":["action"]}
             """;
 
     static final String VERDICT = """

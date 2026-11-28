@@ -26,7 +26,47 @@ public final class RuleCatalog {
                     + "|(?i)(auth|login|token|password|crypto|payment|security|permission)"
                     + "(service|controller|filter|interceptor|manager|handler)?\\.java$");
 
+    /** What each built-in rule means, in the words the report can show to an author. */
+    private static final java.util.Map<String, String> EXPLANATIONS = java.util.Map.ofEntries(
+            java.util.Map.entry("NULL-CHECK-REMOVED",
+                    "判空检查消失了，值可能未经检查就到达使用点"),
+            java.util.Map.entry("CONTRACT-CHANGED",
+                    "方法的可调用契约变了（可见性、签名、throws 或注解）"),
+            java.util.Map.entry("EXCEPTION-SWALLOWED",
+                    "新增的 catch 吞掉了异常，既没有处理也没有往上抛"),
+            java.util.Map.entry("RESOURCE-LEAK",
+                    "可关闭资源没有放进 try-with-resources，是否在别处关闭需要看一眼"),
+            java.util.Map.entry("CONTROL-FLOW-CHANGED",
+                    "控制流形状变了，原来守住的判空或提前返回不在了"),
+            java.util.Map.entry("REORDERED-STATEMENTS",
+                    "同样的语句换了顺序，副作用发生的次序变了"),
+            java.util.Map.entry("OPERATOR-CHANGED",
+                    "比较或算术运算符变了，边界错误常出在这里"),
+            java.util.Map.entry("LITERAL-CHANGED",
+                    "数字或字符串字面量变了，常量里往往藏着意图"),
+            java.util.Map.entry("NULL-ARGUMENT",
+                    "新增的调用传了 null 实参，被调方必须接得住"),
+            java.util.Map.entry("SENSITIVE-PATH",
+                    "改动落在认证、支付或迁移这类敏感路径上"),
+            java.util.Map.entry("CONCURRENCY-SEMANTICS",
+                    "synchronized 或 volatile 变了，代码对并发作出的保证随之改变"),
+            java.util.Map.entry("PURE-DELETION",
+                    "删掉了代码却没有替代，调用方可能还依赖它"),
+            java.util.Map.entry("STATIC-CORRECTNESS",
+                    "静态检查在新增代码上报告了确定的缺陷（字符串用 == 比较、捕获 Throwable）"),
+            java.util.Map.entry("POLICY-CONSTRAINT",
+                    "仓库的政策文档把这一块标成强制，改动必须逐条对照"),
+            java.util.Map.entry("STATIC-STYLE",
+                    "静态检查在新增代码上报告了可疑写法（直接写标准输出、printStackTrace）"));
+
     private final List<Rule> rules;
+
+    /**
+     * A one-line Chinese explanation for a built-in rule, or null for a rule a caller supplied.
+     */
+    public static String explain(String id) {
+        return EXPLANATIONS.get(id);
+    }
 
     public RuleCatalog(List<Rule> rules) {
         this.rules = List.copyOf(rules);

@@ -176,6 +176,11 @@
   #result { margin-top: 26px; }
   .result-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 0 2px 14px; }
   .result-head .eyebrow { margin-bottom: 3px; }
+  .notice {
+    margin: 0 0 14px; padding: 10px 14px; border-radius: 11px;
+    background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 13px;
+  }
+  .notice[hidden] { display: none; }
   .cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
   .card {
     position: relative; overflow: hidden; padding: 14px 15px 13px;
@@ -220,6 +225,7 @@
   .tier { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 550; white-space: nowrap; background: #fdecec; color: var(--must); }
   .tier.JUDGE { background: #fdf3e3; color: var(--question); }
   .tier.SKIP { background: #f0f1f5; color: var(--faint); }
+  .tier.EXEMPTED { background: #e8f5ee; color: var(--assertion); }
 
   .comment {
     padding: 14px 16px; margin-bottom: 10px;
@@ -394,6 +400,7 @@
       </div>
       <span class="hint">所有评论都经过证据校验</span>
     </div>
+    <div class="notice" id="notice" hidden></div>
     <div class="cards" id="cards"></div>
     <section class="panel">
       <details class="fold" id="unitsFold">
@@ -623,6 +630,16 @@ function review() {
 
 function render(data) {
   $("result").style.display = "block";
+  const notice = $("notice");
+  if (data.swapped) {
+    notice.hidden = false;
+    notice.textContent = "起始提交比结束提交新，已自动交换后审查：" + data.baseRevision.slice(0, 7)
+      + " → " + data.headRevision.slice(0, 7);
+    $("base").value = data.baseRevision;
+    $("head").value = data.headRevision;
+  } else {
+    notice.hidden = true;
+  }
   $("cards").innerHTML = [
     card(data.unitCount, "单元"),
     card(data.commentCount, "评论"),
@@ -684,11 +701,11 @@ function renderSampling(sampling) {
     ? `<div class="note">${escapeHtml(sampling.summary)}</div>` : "";
 }
 
-const TIERS = { MUST_INVESTIGATE: "必查", JUDGE: "待判断", SKIP: "跳过" };
+const TIERS = { MUST_INVESTIGATE: "必查", JUDGE: "待判断", SKIP: "跳过", EXEMPTED: "已豁免" };
 const CATEGORIES = { SECURITY: "安全", CONCURRENCY: "并发", RESOURCE: "资源", CONSISTENCY: "一致性", CONTRACT: "契约", LOGIC: "逻辑", DOCS: "文档" };
 const OUTCOMES = {
   CONCLUDED: "出了结论", TOOL_BUDGET_EXHAUSTED: "工具预算用尽", TURN_BUDGET_EXHAUSTED: "回合用尽",
-  MAX_FINDINGS_REACHED: "结论数到顶", STALLED: "无新信息", MODEL_FAILED: "模型调用失败"
+  MAX_FINDINGS_REACHED: "结论数到顶", STALLED: "无新信息", MODEL_FAILED: "模型调用失败", EXEMPTED: "条款允许"
 };
 const tierLabel = (value) => TIERS[value] || value;
 const categoryLabel = (value) => CATEGORIES[value] || value;

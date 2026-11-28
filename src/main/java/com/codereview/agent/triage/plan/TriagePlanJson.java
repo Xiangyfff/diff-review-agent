@@ -52,9 +52,14 @@ public final class TriagePlanJson {
         stats.put("unitsMust", plan.stats().unitsMust());
         stats.put("unitsJudge", plan.stats().unitsJudge());
         stats.put("unitsSkip", plan.stats().unitsSkip());
+        stats.put("unitsExempted", plan.units().stream().filter(PlannedUnit::exempted).count());
         stats.put("unitsScheduled", plan.stats().unitsScheduled());
         stats.put("unitsBudgetSkipped", plan.stats().unitsBudgetSkipped());
         stats.put("cheapGateSkipped", plan.cheapGateSkipped());
+        stats.put("skippedByModel", plan.units().stream()
+                .filter(unit -> unit.tierReason() != null
+                        && unit.tierReason().startsWith(PlanAssembler.MODEL_DECLINED_REASON))
+                .count());
         stats.put("invalidQuestions", plan.stats().invalidQuestions());
         stats.put("calibrationDisagreements", plan.stats().calibrationDisagreements());
         stats.put("unparsedUnits", plan.stats().unparsedUnits());
@@ -82,6 +87,7 @@ public final class TriagePlanJson {
         node.put("addedLines", unit.unit().addedLines());
         node.put("removedLines", unit.unit().removedLines());
         node.put("scheduled", unit.scheduled());
+        node.put("exempted", unit.exempted());
         node.put("budgetSkipped", unit.budgetSkipped());
         node.put("parseFailed", unit.parseFailed());
         node.put("syntheticQuestions", unit.syntheticQuestions());

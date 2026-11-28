@@ -56,7 +56,44 @@ public record ReviewReport(String baseRevision, String headRevision, TriageStats
 
     public ReviewReport {
         units = List.copyOf(units);
-        comments = List.copyOf(comments);
+        // A reader wants the change requests first; an unconfirmed question is the fallback, not
+        // the headline. A stable sort keeps the file order inside each group.
+        List<Comment> ordered = comments.stream()
+                .sorted(java.util.Comparator.comparingInt(comment ->
+                        comment.status() == Comment.Status.ASSERTION ? 0 : 1))
+                .toList();
+        // One rule firing on every method of a deleted or rewritten file would otherwise produce
+        // a wall of identical questions. Merge those into the first one and name the other lines.
+        java.util.Map<String, List<Comment>> repeated = new java.util.LinkedHashMap<>();
+        for (Comment comment : ordered) {
+            if (comment.status() == Comment.Status.QUESTION && comment.evidenceIds().isEmpty()) {
+                repeated.computeIfAbsent(comment.file() + "\u0000" + comment.body(),
+                        key -> new java.util.ArrayList<>()).add(comment);
+            }
+        }
+        List<Comment> collapsed = new java.util.ArrayList<>();
+        for (Comment comment : ordered) {
+            if (comment.status() != Comment.Status.QUESTION || !comment.evidenceIds().isEmpty()) {
+                collapsed.add(comment);
+                continue;
+            }
+            List<Comment> group = repeated.get(comment.file() + "\u0000" + comment.body());
+            if (group.size() == 1) {
+                collapsed.add(comment);
+                continue;
+            }
+            if (group.get(0) != comment) {
+                merged++;
+                continue;
+            }
+            String lines = group.stream().map(item -> String.valueOf(item.line()))
+                    .collect(java.util.stream.Collectors.joining("、"));
+            collapsed.add(new Comment(comment.file(), comment.line(), comment.riskCategory(),
+                    comment.status(),
+                    comment.body() + "（同一文件里共 " + group.size() + " 处：第 " + lines + " 行）",
+                    comment.evidenceIds()));
+        }
+        comments = List.copyOf(collapsed);
     }
 
     public int assertions() {

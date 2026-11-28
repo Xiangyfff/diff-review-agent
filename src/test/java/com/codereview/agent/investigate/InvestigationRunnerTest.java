@@ -2,6 +2,8 @@ package com.codereview.agent.investigate;
 
 import org.junit.jupiter.api.Test;
 
+import com.codereview.agent.triage.policy.PolicyChunk;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -248,5 +250,163 @@ class InvestigationRunnerTest {
 
         assertThat(seen.get(0).open()).hasSize(2);
         assertThat(seen.get(0).toolCallsLeft()).isEqualTo(8);
+    }
+
+    @Test
+    void anEmptyQueueIsOpenedByTheModelAskingItsOwnQuestions() {
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(
+                        new ModelTurn.Raise(List.of(
+                                new ModelTurn.Seed("after", "这个改动改变了行为吗？", 1))),
+                        new ModelTurn.CallTool("q1", read()),
+                        new ModelTurn.Reject("q1", "读到的代码在上游已经判空", List.of("ev-1"))),
+                new Toolbox(List.of(new FixedTool(true))), InvestigateConfig.defaults());
+
+        InvestigationResult result = runner.investigate(task());
+
+        assertThat(result.outcome()).isEqualTo(InvestigationResult.Outcome.CONCLUDED);
+        assertThat(result.questions()).hasSize(1);
+        assertThat(result.questions().get(0).status())
+                .isEqualTo(InvestigationResult.QuestionState.Status.REJECTED);
+        assertThat(result.findings()).isEmpty();
+    }
+
+    @Test
+    void aQuestionWhoseTargetIsNotInTheUnitIsNotQueued() {
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(new ModelTurn.Raise(List.of(
+                        new ModelTurn.Seed("MissingSymbol", "它会被为 null 吗？", 1)))),
+                new Toolbox(List.of(new FixedTool(true))), InvestigateConfig.defaults());
+
+        InvestigationResult result = runner.investigate(task());
+
+        assertThat(result.outcome()).isEqualTo(InvestigationResult.Outcome.NOTHING_TO_ASK);
+        assertThat(result.questions()).isEmpty();
+        assertThat(result.rejectedFindings()).isEqualTo(1);
+    }
+
+    @Test
+    void aRejectionNeedsEvidenceFromACodeRead() {
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(
+                        new ModelTurn.CallTool("q1", read()),
+                        new ModelTurn.Reject("q1", "看起来没问题", List.of()),
+                        new ModelTurn.Reject("q1", "读到的代码在上游已经判空", List.of("ev-1"))),
+                new Toolbox(List.of(new FixedTool(true))), InvestigateConfig.defaults());
+
+        InvestigationResult result = runner.investigate(task("空参数会出事吗？"));
+
+        assertThat(result.rejectedFindings()).isEqualTo(1);
+        assertThat(result.questions()).singleElement().satisfies(question ->
+                assertThat(question.status())
+                        .isEqualTo(InvestigationResult.QuestionState.Status.REJECTED));
+    }
+
+    @Test
+    void theRunnerPicksTheMostUrgentQuestionAndTheModelCannotSkipAhead() {
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(
+                        new ModelTurn.Raise(List.of(
+                                new ModelTurn.Seed("after", "第一个问题", 1),
+                                new ModelTurn.Seed("after", "第二个问题", 2))),
+                        new ModelTurn.Abandon("q2", "先答第二个"),
+                        new ModelTurn.Abandon("q1", "答不了"),
+                        new ModelTurn.Abandon("q2", "也答不了")),
+                new Toolbox(List.of(new FixedTool(true))), InvestigateConfig.defaults());
+
+        InvestigationResult result = runner.investigate(task());
+
+        assertThat(result.rejectedFindings()).isEqualTo(1);
+        assertThat(result.abandoned()).hasSize(2);
+        assertThat(result.questions().get(0).status())
+                .isEqualTo(InvestigationResult.QuestionState.Status.ABANDONED);
+    }
+
+    @Test
+    void aQuestionIsGivenThreeToolCallsAtMost() {
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(
+                        new ModelTurn.CallTool("q1", read(10)),
+                        new ModelTurn.CallTool("q1", read(11)),
+                        new ModelTurn.CallTool("q1", read(12)),
+                        new ModelTurn.CallTool("q1", read(13)),
+                        new ModelTurn.Abandon("q1", "查不动了")),
+                new Toolbox(List.of(new FixedTool(true))), InvestigateConfig.defaults());
+
+        InvestigationResult result = runner.investigate(task("这里安全吗？"));
+
+        assertThat(result.toolCalls()).isEqualTo(3);
+        assertThat(result.rejectedFindings()).isEqualTo(1);
+        assertThat(result.abandoned()).hasSize(1);
+    }
+
+    private static ToolCall read(int start) {
+        return new ToolCall("read_lines", Map.of("path", FILE,
+                "start", String.valueOf(start), "end", String.valueOf(start + 4)));
+    }
+
+    private static final String CLAUSE_TEXT = "订单查找允许空参数，返回空列表。";
+
+    private static PolicyChunk allowance() {
+        return new PolicyChunk("pol-test-1", "docs/policies/x.md", "允许空参数", CLAUSE_TEXT,
+                false, false, true, List.of("NULL_CHECK_REMOVED"), List.of("a/**"),
+                List.of("return List.of();"));
+    }
+
+    @Test
+    void anExemptionThatQuotesTheClauseAndCitesTheLineIsRecorded() {
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(
+                        new ModelTurn.CallTool("q1", read()),
+                        new ModelTurn.Exempt("q1", "pol-test-1", CLAUSE_TEXT,
+                                "读到的代码在空参数时直接返回空列表，符合条款", List.of("ev-1"), 12)),
+                new Toolbox(List.of(new FixedTool(true))),
+                InvestigateConfig.defaults(), Map.of(), Map.of("pol-test-1", allowance()));
+
+        InvestigationResult result = runner.investigate(task("空参数会出事吗？"));
+
+        assertThat(result.exemptions()).hasSize(1);
+        assertThat(result.exemptions().get(0).clauseId()).isEqualTo("pol-test-1");
+        assertThat(result.outcome()).isEqualTo(InvestigationResult.Outcome.EXEMPTED);
+        assertThat(result.findings()).isEmpty();
+        assertThat(result.abandoned()).isEmpty();
+    }
+
+    @Test
+    void anExemptionThatDoesNotQuoteTheClauseIsRejected() {
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(
+                        new ModelTurn.CallTool("q1", read()),
+                        new ModelTurn.Exempt("q1", "pol-test-1", "这里大概没问题",
+                                "随便说说", List.of("ev-1"), 12),
+                        new ModelTurn.Exempt("q1", "pol-test-1", "这里大概没问题",
+                                "随便说说", List.of("ev-1"), 12)),
+                new Toolbox(List.of(new FixedTool(true))),
+                InvestigateConfig.defaults(), Map.of(), Map.of("pol-test-1", allowance()));
+
+        InvestigationResult result = runner.investigate(task("空参数会出事吗？"));
+
+        assertThat(result.exemptions()).isEmpty();
+        assertThat(result.rejectedFindings()).isEqualTo(2);
+        assertThat(result.abandoned()).hasSize(1);
+        assertThat(result.abandoned().get(0).reason()).contains("豁免");
+    }
+
+    @Test
+    void aClauseThatOnlyForbidsCannotExempt() {
+        PolicyChunk forbidding = new PolicyChunk("pol-test-2", "docs/policies/x.md", "空参数",
+                CLAUSE_TEXT, true);
+        InvestigationRunner runner = new InvestigationRunner(
+                new Scripted(
+                        new ModelTurn.CallTool("q1", read()),
+                        new ModelTurn.Exempt("q1", "pol-test-2", CLAUSE_TEXT,
+                                "说这是允许的", List.of("ev-1"), 12)),
+                new Toolbox(List.of(new FixedTool(true))),
+                InvestigateConfig.defaults(), Map.of(), Map.of("pol-test-2", forbidding));
+
+        InvestigationResult result = runner.investigate(task("空参数会出事吗？"));
+
+        assertThat(result.exemptions()).isEmpty();
+        assertThat(result.rejectedFindings()).isEqualTo(1);
     }
 }

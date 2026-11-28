@@ -169,4 +169,33 @@ class VerifierRunnerTest {
         assertThat(clean.review(request()).disposition())
                 .isEqualTo(VerifyResult.Disposition.ASSERTION);
     }
+
+    @Test
+    void anExemptionRequestShowsTheClauseAndTheQuoteToTheCritic() {
+        VerificationRequest exemption = new VerificationRequest(FINDING,
+                List.of(new Evidence("ev-1", "read_lines", "A.java", 10, 12, "return List.of();")),
+                "before", "after", List.of(),
+                "pol-test-1", "订单查找允许空参数，返回空列表。", "订单查找允许空参数，返回空列表。",
+                "空参数直接返回空列表");
+
+        String prompt = exemption.render();
+
+        assertThat(exemption.exemption()).isTrue();
+        assertThat(prompt).contains("条款豁免").contains("pol-test-1")
+                .contains("订单查找允许空参数，返回空列表。").contains("空参数直接返回空列表");
+    }
+
+    @Test
+    void theMockCriticDoesNotJudgeClauseClaimsOffline() {
+        VerificationRequest exemption = new VerificationRequest(FINDING,
+                List.of(new Evidence("ev-1", "read_lines", "A.java", 10, 12, "return List.of();")),
+                "before", "after", List.of(),
+                "pol-test-1", "订单查找允许空参数，返回空列表。", "订单查找允许空参数，返回空列表。",
+                "空参数直接返回空列表");
+        VerifierRunner runner = new VerifierRunner(new MockVerifier(),
+                toolboxReturning("10: if (value != null) {"), VerifyConfig.defaults());
+
+        assertThat(runner.review(exemption).disposition())
+                .isEqualTo(VerifyResult.Disposition.ASSERTION);
+    }
 }

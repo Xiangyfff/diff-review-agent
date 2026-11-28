@@ -25,7 +25,11 @@ public record InvestigationState(
         /** One line per tool call so far, including the ones that returned nothing. */
         List<String> attempts,
         /** Name-level facts from triage, or an empty string when there are none. */
-        String facts) {
+        String facts,
+        /** True before the model has raised its first questions. */
+        boolean opening,
+        /** Questions already answered, so the model does not re-litigate them. */
+        List<InvestigationResult.QuestionState> resolved) {
 
     public InvestigationState {
         changes = List.copyOf(changes);
@@ -33,6 +37,15 @@ public record InvestigationState(
         evidence = List.copyOf(evidence);
         lastRejection = lastRejection == null ? "" : lastRejection;
         attempts = attempts == null ? List.of() : List.copyOf(attempts);
+        resolved = resolved == null ? List.of() : List.copyOf(resolved);
+    }
+
+    /** Kept for callers that predate self-raised questions. */
+    public InvestigationState(String unitKey, String file, int line, String before, String after,
+            List<String> changes, List<Question> open, List<Evidence> evidence, int toolCallsUsed,
+            int toolCallsLeft, String lastRejection, List<String> attempts, String facts) {
+        this(unitKey, file, line, before, after, changes, open, evidence, toolCallsUsed,
+                toolCallsLeft, lastRejection, attempts, facts, false, List.of());
     }
 
     public List<String> evidenceIds() {

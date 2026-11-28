@@ -6,6 +6,7 @@ import com.codereview.agent.triage.model.IntentSummary;
 import com.codereview.agent.triage.model.TriageModel;
 import com.codereview.agent.triage.model.UnitAssessment;
 import com.codereview.agent.triage.model.UnitPrompt;
+import com.codereview.agent.triage.model.Witness;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
@@ -29,6 +30,12 @@ public final class LangChain4jTriageModel implements TriageModel {
             你是代码审查助手的初审环节。你的工作不是下结论，而是提出具体、可被工具回答的问题。
             规则：问题必须指向输入里出现过的具体符号或位置；每条只问一件事；不评论输入里没有的代码；
             不猜严重程度；不给修改建议。你只能输出一个 JSON 对象。
+            如果你认为这个单元不值得查，必须在 witness 里给出一个可被程序核对的理由：
+            kind 只能是 test-only（这个文件是测试代码）或 log-only（改动只动了日志语句里的字面量），
+            log-only 还要在 quote 里原样抄一句改动后的日志代码。给不出这种理由就必须
+            worthInvestigating=true；编理由不会让单元消失，最多让它按判断档照常排期。
+            程序还会核对 quoted 的代码确实在改动里、确实是日志调用，并且最多只让三成判断档单元这样跳过，
+            必查单元永远不会因为 witness 被跳过。
             """;
 
     private static final String ASSESS_SHAPE = """
@@ -36,6 +43,7 @@ public final class LangChain4jTriageModel implements TriageModel {
             {"questions":[{"target":"问题指向的符号或位置","text":"一句话问题"}],
              "worthInvestigating":true,
              "abstainReason":"若你认为不值得查，写一句理由；否则为空字符串",
+             "witness":{"kind":"none","quote":""},
              "rationale":"一句话说明你怎么挑的问题"}
             """;
 
@@ -76,8 +84,10 @@ public final class LangChain4jTriageModel implements TriageModel {
             }
         }
         boolean worth = JsonReplies.bool(node, "worthInvestigating", !questions.isEmpty());
+        JsonNode witness = node.path("witness");
         return new UnitAssessment(questions, worth, JsonReplies.text(node, "abstainReason"),
-                JsonReplies.text(node, "rationale"));
+                JsonReplies.text(node, "rationale"),
+                new Witness(JsonReplies.text(witness, "kind"), JsonReplies.text(witness, "quote")));
     }
 
     private static String render(ChangeOverview overview) {

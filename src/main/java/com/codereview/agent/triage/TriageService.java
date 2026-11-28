@@ -13,6 +13,7 @@ import com.codereview.agent.triage.model.UnitAssessment;
 import com.codereview.agent.triage.model.UnitPrompt;
 import com.codereview.agent.triage.parse.SourceParser;
 import com.codereview.agent.triage.policy.OllamaEmbedder;
+import com.codereview.agent.triage.policy.PolicyExemption;
 import com.codereview.agent.triage.policy.PolicyHit;
 import com.codereview.agent.triage.policy.PolicyIndex;
 import com.codereview.agent.triage.policy.PolicyLibrary;
@@ -305,7 +306,17 @@ public final class TriageService {
                 POLICY_TOP_K, Math.min(POLICY_MIN_SCORE, policyIndex.scoreCut()));
         RuleContext context = new RuleContext(unit, detection.changes(), warnings, policyHits);
         List<RuleHit> hits = rules.evaluate(context);
-        TierPolicy.Decision decision = tierPolicy.decide(context, hits);
+        PolicyExemption exemption = PolicyExemption.find(unit.file(), policyHits,
+                Math.min(POLICY_MIN_SCORE, policyIndex.scoreCut()));
+        if (exemption != null) {
+            // The document says this rule does not apply here. Only the rules it names are removed;
+            // anything else that fired still speaks.
+            List<RuleHit> remaining = hits.stream()
+                    .filter(hit -> !exemption.exempts(hit.rule().id()))
+                    .toList();
+            hits = remaining;
+        }
+        TierPolicy.Decision decision = tierPolicy.decide(context, hits, exemption);
 
         String facts = factsFor(unit, symbolIndex, warnings, policyHits);
         UnitAssessment assessment;
@@ -334,7 +345,8 @@ public final class TriageService {
                 return assessment;
             }
             return new UnitAssessment(assessment.questions().subList(0, config.maxQuestionsPerUnit()),
-                    assessment.worthInvestigating(), assessment.abstainReason(), assessment.rationale());
+                    assessment.worthInvestigating(), assessment.abstainReason(),
+                    assessment.rationale(), assessment.witness());
         } catch (RuntimeException failure) {
             return new UnitAssessment(List.of(), false,
                     "模型调用失败：" + failure.getClass().getSimpleName(), "");

@@ -137,7 +137,10 @@ class ModelAdaptersTest {
         String prompt = prompts.get(0);
         assertThat(prompt).contains("已折叠");
         assertThat(prompt.length()).isLessThan(naive);
-        assertThat(prompt.length()).isLessThan((int) (naive * 0.9));
+        // The fold is proved by content, not by a brittle size ratio: the newest evidence is in
+        // full and an older one is reduced to its id and location.
+        assertThat(prompt).contains("statement number 7 in unit 10");
+        assertThat(prompt).doesNotContain("statement number 3 in unit 2");
     }
 
     @Test

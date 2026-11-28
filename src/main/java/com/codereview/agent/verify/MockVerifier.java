@@ -19,6 +19,11 @@ public final class MockVerifier implements Verifier {
 
     @Override
     public Verdict review(VerificationRequest request, ToolSession session) {
+        if (request.exemption()) {
+            // Judging whether a clause's conditions hold is exactly what the offline stand-in
+            // cannot do; keeping the claim is honest, retracting it on a hunch is not.
+            return new Verdict.Keep("离线复核不判断条款豁免");
+        }
         if (session.callsLeft() < 1) {
             return new Verdict.Keep("没有可用的工具预算，无法反驳");
         }
